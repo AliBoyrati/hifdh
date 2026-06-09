@@ -910,17 +910,34 @@ function sectionLabel(sectionKey,pages){const all=new Set();for(const p of pages
 
 // Short surah = multiple surahs share its start page (e.g. Al-Ikhlas, Al-Falaq, An-Nas all on page 604)
 function isShortSurah(s){ return (PAGE_SURAH_STARTS[SURAH_STARTS[s]]||[]).length>1; }
+// Surahs shorter than 3 pages are reviewed as one surah-level card instead of page-by-page.
+function isSurahCard(s){ return getSurahPages(s).length<3; }
+function isWholeSurahMemorized(s,pages=S.pages){const sp=getSurahPages(s);return sp.length>0&&sp.every(p=>pages.includes(p));}
 function getMemorizedShortSurahs(pages){ const r=new Set(); for(const p of pages) for(const s of (PAGE_SURAH_STARTS[p]||[])) if(isShortSurah(s))r.add(s); return[...r]; }
 
 function buildRatingQueue(duePages) {
-  const queue = [];
+  const queue = [], seenSurahs = new Set();
   for (const p of duePages) {
-    const here = (PAGE_SURAH_STARTS[p]||[]).filter(s=>getSurahPages(s).some(sp=>S.pages.includes(sp)));
-    if (here.length>0) here.forEach(s=>{
-      if(isShortSurah(s)&&(S.retiredSurahs.has(s)||!S.surahCards[s]))return;
-      queue.push({page:p,surah:s,cardType:isShortSurah(s)?'surah':'page'});
-    });
-    else queue.push({page:p,surah:getSurah(p),cardType:'page'});
+    const starts = PAGE_SURAH_STARTS[p] || [];
+    const here = starts.filter(s=>isWholeSurahMemorized(s));
+    if (here.length>0) {
+      here.forEach(s=>{
+        if(!isSurahCard(s)||seenSurahs.has(s))return;
+        if(S.retiredSurahs.has(s)||!S.surahCards[s])return;
+        seenSurahs.add(s);
+        queue.push({page:SURAH_STARTS[s],surah:s,cardType:'surah'});
+      });
+      if(here.some(s=>isSurahCard(s)))continue;
+    }
+    const s=getSurah(p);
+    if(isSurahCard(s)&&isWholeSurahMemorized(s)){
+      if(!seenSurahs.has(s)&&!S.retiredSurahs.has(s)&&S.surahCards[s]){
+        seenSurahs.add(s);
+        queue.push({page:SURAH_STARTS[s],surah:s,cardType:'surah'});
+      }
+    } else {
+      queue.push({page:p,surah:s,cardType:'page'});
+    }
   }
   return queue;
 }
@@ -949,18 +966,68 @@ const saveRemovedSurahs=()=>localStorage.setItem(KEY_SURAH_REMOVED,JSON.stringif
 function ensureCards(cards,pages){const t=today();let ch=false;for(const p of pages){if(!cards[p]){cards[p]={interval:0,ease:2.5,reps:0,due:t};ch=true;}}if(ch)saveCards(cards);return cards;}
 // Only creates cards for explicitly listed surahs — never auto-discovers from shared pages
 function ensureSurahCards(cards,pages,explicit=[]){const t=today();let ch=false;for(const s of explicit){if(!cards[s]&&!S.removedSurahs.has(s)){cards[s]={interval:0,ease:2.5,reps:0,due:t};ch=true;}}if(ch)saveSurahCards(cards);return cards;}
+function ensureCompactSurahCards(cards,pages){
+  let ch=false;
+  for(let s=1;s<=114;s++){
+    if(!isSurahCard(s)||!isWholeSurahMemorized(s,pages)||S.removedSurahs.has(s))continue;
+    if(!cards[s]){
+      const pageCards=getSurahPages(s).map(p=>S.cards[p]).filter(Boolean);
+      const due=pageCards.map(c=>c.due).filter(Boolean).sort()[0]||today();
+      cards[s]={interval:0,ease:2.5,reps:0,due};
+      ch=true;
+    }
+  }
+  if(ch)saveSurahCards(cards);
+  return cards;
+}
 
 function getDue(cards,pages){
-  const t=today();
-  return pages.filter(p=>{
-    if(S.retired.has(p))return false;
+  const t=today(), due=[], seenSurahs=new Set();
+  for(const p of pages){
+    if(S.retired.has(p))continue;
     const starts=PAGE_SURAH_STARTS[p]||[];
-    if(starts.some(s=>isShortSurah(s))){
-      // Page has short surahs — due if any non-retired short surah on this page is due
-      return starts.some(s=>isShortSurah(s)&&!S.retiredSurahs.has(s)&&S.surahCards[s]&&S.surahCards[s].due<=t);
+    const surahStarts=starts.filter(s=>isSurahCard(s)&&isWholeSurahMemorized(s,pages));
+    if(surahStarts.length){
+      for(const s of surahStarts){
+        if(!seenSurahs.has(s)&&!S.retiredSurahs.has(s)&&S.surahCards[s]&&S.surahCards[s].due<=t){
+          seenSurahs.add(s);
+          due.push(SURAH_STARTS[s]);
+        }
+      }
+      continue;
     }
-    return cards[p]&&cards[p].due<=t;
-  });
+    const s=getSurah(p);
+    if(isSurahCard(s)&&isWholeSurahMemorized(s,pages)){
+      if(!seenSurahs.has(s)&&!S.retiredSurahs.has(s)&&S.surahCards[s]&&S.surahCards[s].due<=t){
+        seenSurahs.add(s);
+        due.push(SURAH_STARTS[s]);
+      }
+      continue;
+    }
+    if(cards[p]&&cards[p].due<=t)due.push(p);
+  }
+  return due;
+}
+
+function getUpcoming(){
+  const upcoming={}, seenSurahs=new Set();
+  const add=d=>{if(d){if(!upcoming[d])upcoming[d]=0;upcoming[d]++;}};
+  for(const p of S.pages){
+    if(S.retired.has(p))continue;
+    const starts=PAGE_SURAH_STARTS[p]||[];
+    const compactStarts=starts.filter(s=>isSurahCard(s)&&isWholeSurahMemorized(s));
+    if(compactStarts.length){
+      compactStarts.forEach(s=>{if(!seenSurahs.has(s)&&!S.retiredSurahs.has(s)){seenSurahs.add(s);add(S.surahCards[s]?.due);}});
+      continue;
+    }
+    const s=getSurah(p);
+    if(isSurahCard(s)&&isWholeSurahMemorized(s)){
+      if(!seenSurahs.has(s)&&!S.retiredSurahs.has(s)){seenSurahs.add(s);add(S.surahCards[s]?.due);}
+      continue;
+    }
+    add(S.cards[p]?.due);
+  }
+  return upcoming;
 }
 
 // ─── Utils ────────────────────────────────────────────────────────────────────
@@ -977,19 +1044,20 @@ function calcInterval(card,rating,settings){
   const ne=rating===2?Math.max(1.3,ease-0.15):rating===4?Math.min(3.0,ease+0.1):ease;
   return{interval:ni,ease:ne,reps:reps+1};
 }
-function applyRating(card,rating,settings){const r=calcInterval(card,rating,settings);return{...r,due:addDays(today(),r.interval)};}
+function applyRating(card,rating,settings){const r=calcInterval(card,rating,settings);const reviewed=today();return{...r,due:addDays(reviewed,r.interval),lastReviewed:reviewed};}
 function previewLabels(card,settings){return{1:intervalLabel(calcInterval(card,1,settings).interval),2:intervalLabel(calcInterval(card,2,settings).interval),3:intervalLabel(calcInterval(card,3,settings).interval),4:intervalLabel(calcInterval(card,4,settings).interval)};}
 
 // ─── State ────────────────────────────────────────────────────────────────────
 const S={
   screen:'home', pages:loadPages(), cards:{}, settings:loadSettings(), retired:loadRetired(),
   surahCards:{}, retiredSurahs:loadSurahRetired(), removedSurahs:loadRemovedSurahs(),
-  ratingQueue:[], ratingIdx:0, pageRatings:{}, surahRatings:{}, moreScrollY:0, openJuzs:new Set(),
+  ratingQueue:[], ratingIdx:0, pageRatings:{}, surahRatings:{}, ratingHistory:[], moreScrollY:0, openJuzs:new Set(),
   selectMode:false, selectedForRating:new Set(),
   selectedSurah:null, selection:new Set(),
 };
 S.cards=ensureCards(loadCards(),S.pages);
 S.surahCards=loadSurahCards(); // Cards are created only when explicitly added, never auto-discovered
+S.surahCards=ensureCompactSurahCards(S.surahCards,S.pages);
 
 // ─── Actions ──────────────────────────────────────────────────────────────────
 function goHome()        {S.screen='home';     S.selectMode=false; S.selectedForRating=new Set(); render();}
@@ -999,8 +1067,8 @@ function openSurah(n){
   const sp=getSurahPages(n);
   if(sp.length===1){
     const p=sp[0];
-    if(isShortSurah(n)){
-      // Short surah — add only (removal is via × button)
+    if(isSurahCard(n)){
+      // Compact surah card — add only (removal is via × button)
       if(!S.pages.includes(p)){S.pages=[...S.pages,p].sort((a,b)=>a-b);savePages(S.pages);}
       S.removedSurahs.delete(n);saveRemovedSurahs();
       S.cards=ensureCards(S.cards,S.pages);S.surahCards=ensureSurahCards(S.surahCards,S.pages,[n]);
@@ -1026,36 +1094,57 @@ function toggleSelectPage(p){S.selectedForRating.has(p)?S.selectedForRating.dele
 function startRating(pagesToRate=null){
   const due=pagesToRate||getDue(S.cards,S.pages);
   S.ratingQueue=buildRatingQueue(due);
-  S.ratingIdx=0;S.pageRatings={};S.surahRatings={};
+  S.ratingIdx=0;S.pageRatings={};S.surahRatings={};S.ratingHistory=[];
   S.selectMode=false;S.selectedForRating=new Set();
   S.screen='rating';render();
 }
 function goBackFromRating(){
-  S.screen='home'; S.ratingQueue=[]; S.ratingIdx=0; S.pageRatings={}; S.surahRatings={}; render();
+  if(S.ratingIdx>0){undoLastRating();render();return;}
+  S.screen='home'; S.ratingQueue=[]; S.ratingIdx=0; S.pageRatings={}; S.surahRatings={}; S.ratingHistory=[]; render();
 }
 function startRatingSingle(p){
   S.ratingQueue=buildRatingQueue([p]);
-  S.ratingIdx=0;S.pageRatings={};S.surahRatings={};
+  S.ratingIdx=0;S.pageRatings={};S.surahRatings={};S.ratingHistory=[];
   S.selectMode=false;
   S.screen='rating';render();
 }
 
 function rate(r){
   const item=S.ratingQueue[S.ratingIdx];
+  S.ratingHistory.push({
+    item:{...item}, rating:r,
+    previous:item.cardType==='surah'?{...S.surahCards[item.surah]}:{...S.cards[item.page]}
+  });
   if(item.cardType==='surah'){
     if(!S.surahRatings[item.surah])S.surahRatings[item.surah]=[];
     S.surahRatings[item.surah].push(r);
+    S.surahCards[item.surah]=applyRating(S.surahCards[item.surah],r,S.settings);
+    saveSurahCards(S.surahCards);
   } else {
     if(!S.pageRatings[item.page])S.pageRatings[item.page]=[];
     S.pageRatings[item.page].push(r);
+    S.cards[item.page]=applyRating(S.cards[item.page],r,S.settings);
+    saveCards(S.cards);
   }
   S.ratingIdx++;
-  if(S.ratingIdx>=S.ratingQueue.length){
-    for(const[p,ratings]of Object.entries(S.pageRatings))S.cards[parseInt(p)]=applyRating(S.cards[parseInt(p)],Math.min(...ratings),S.settings);
-    for(const[s,ratings]of Object.entries(S.surahRatings))S.surahCards[parseInt(s)]=applyRating(S.surahCards[parseInt(s)],Math.min(...ratings),S.settings);
-    saveCards(S.cards);saveSurahCards(S.surahCards);S.screen='done';
-  }
+  if(S.ratingIdx>=S.ratingQueue.length)S.screen='done';
   render();
+}
+
+function undoLastRating(){
+  const h=S.ratingHistory.pop();
+  if(!h)return;
+  if(h.item.cardType==='surah'){
+    S.surahCards[h.item.surah]=h.previous;
+    if(S.surahRatings[h.item.surah]){S.surahRatings[h.item.surah].pop();if(!S.surahRatings[h.item.surah].length)delete S.surahRatings[h.item.surah];}
+    saveSurahCards(S.surahCards);
+  } else {
+    S.cards[h.item.page]=h.previous;
+    if(S.pageRatings[h.item.page]){S.pageRatings[h.item.page].pop();if(!S.pageRatings[h.item.page].length)delete S.pageRatings[h.item.page];}
+    saveCards(S.cards);
+  }
+  S.ratingIdx=Math.max(0,S.ratingIdx-1);
+  S.screen='rating';
 }
 
 function togglePage(p){S.selection.has(p)?S.selection.delete(p):S.selection.add(p);render();}
@@ -1063,8 +1152,12 @@ function savePagePicker(){
   const sp=getSurahPages(S.selectedSurah);
   S.pages=[...S.pages.filter(p=>!sp.includes(p)),...Array.from(S.selection)].sort((a,b)=>a-b);
   S.cards=ensureCards(S.cards,S.pages);
-  // Only create surah card for the selected surah — never auto-add sibling surahs on shared pages
-  if(isShortSurah(S.selectedSurah))S.surahCards=ensureSurahCards(S.surahCards,S.pages,[S.selectedSurah]);
+  // Compact surahs get one surah-level card once the whole surah is selected
+  if(isSurahCard(S.selectedSurah)&&isWholeSurahMemorized(S.selectedSurah,S.pages)){
+    S.removedSurahs.delete(S.selectedSurah);saveRemovedSurahs();
+    S.surahCards=ensureSurahCards(S.surahCards,S.pages,[S.selectedSurah]);
+  }
+  S.surahCards=ensureCompactSurahCards(S.surahCards,S.pages);
   savePages(S.pages);saveCards(S.cards);saveSurahCards(S.surahCards);S.screen='more';render();
 }
 function removePage(p){
@@ -1092,7 +1185,9 @@ function retireAllSurahPages(s){
 function removeAllSurahPages(s){
   showModal(`Remove ${SURAH_NAMES[s]}?`,`All pages will be removed from your list.`,'Remove',true,()=>{
     const mp=getSurahPages(s).filter(p=>S.pages.includes(p));
-    S.pages=S.pages.filter(p=>!mp.includes(p));savePages(S.pages);render();
+    S.pages=S.pages.filter(p=>!mp.includes(p));
+    if(isSurahCard(s)){delete S.surahCards[s];S.removedSurahs.add(s);saveSurahCards(S.surahCards);saveRemovedSurahs();}
+    savePages(S.pages);render();
   });
 }
 function removeShortSurah(s){
@@ -1220,6 +1315,18 @@ function renderManageList(pages, retired=false){
         const allSurahs=[];
         for(const p of sectionPages) for(const s of (PAGE_SURAH_STARTS[p]||[])) if(!allSurahs.includes(s))allSurahs.push(s);
         const hasShort=allSurahs.some(s=>isShortSurah(s));
+        if(isSurahCard(sectionKey)&&isWholeSurahMemorized(sectionKey)&&S.surahCards[sectionKey]){
+          const pg=getSurahPages(sectionKey);
+          const pgLabel=pg.length>1?`Pages ${pg[0]} → ${pg[pg.length-1]}`:`Page ${pg[0]}`;
+          if(retired){
+            if(!S.retiredSurahs.has(sectionKey))return'';
+            return`<div class="surah-block"><p class="surah-label">${SURAH_NAMES[sectionKey]}</p><ul class="page-list"><li class="page-item retired-item"><span class="page-num-main">${pgLabel}</span><div class="page-meta"><span class="retired-tag">Retired</span><span class="restore-btn" onclick="unretireSurah(${sectionKey})">restore</span></div></li></ul></div>`;
+          }
+          if(S.retiredSurahs.has(sectionKey))return'';
+          const d=S.surahCards[sectionKey]?.due;
+          const dueTag=d?(d<=t?`<span class="page-due-now">Due</span>`:`<span class="page-due-tag">${d}</span>`):'';
+          return`<div class="surah-block"><p class="surah-label">${SURAH_NAMES[sectionKey]}</p><ul class="page-list"><li class="page-item"><span class="page-num-main">${pgLabel}</span><span class="page-item-verse">${FIRST_VERSE[sectionKey]||''}</span><div class="page-meta">${dueTag}<span class="retire-btn" onclick="retireSurah(${sectionKey})">retire</span><span class="delete-btn" onclick="removeAllSurahPages(${sectionKey})">×</span></div></li></ul></div>`;
+        }
 
         if(hasShort){
           // Group short surahs by their shared page, use page number as the section header
@@ -1269,12 +1376,11 @@ function render(){
 
   // HOME
   if(S.screen==='home'){
-    const upcoming={};
-    for(const p of S.pages){const d=S.cards[p]?.due;if(d&&!S.retired.has(p)){if(!upcoming[d])upcoming[d]=0;upcoming[d]++;}}
+    const upcoming=getUpcoming();
     const futureDates=Object.keys(upcoming).filter(d=>d>t).sort().slice(0,3);
 
     if(due.length===0){
-      const next=S.pages.filter(p=>!S.retired.has(p)).map(p=>S.cards[p]?.due).filter(Boolean).sort()[0];
+      const next=Object.keys(upcoming).sort()[0];
       app.innerHTML=`<div class="top-bar"><h1>Muraja'ah</h1><button class="top-btn" onclick="goMore()"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="5" x2="18" y2="5"/><line x1="2" y1="10" x2="18" y2="10"/><line x1="2" y1="15" x2="18" y2="15"/><circle cx="7" cy="5" r="2.2" fill="var(--bg)"/><circle cx="13" cy="10" r="2.2" fill="var(--bg)"/><circle cx="8" cy="15" r="2.2" fill="var(--bg)"/></svg></button></div>
         <div class="all-done"><div class="tick">✓</div><p class="done-msg">All done for today.</p><p class="done-sub">Next due: <strong>${next||'—'}</strong></p></div>
         <span class="reset-link" onclick="hardReset()">reset all progress</span>`;
@@ -1296,10 +1402,10 @@ function render(){
     const groups=surahsByJuz(),juzNums=Object.keys(groups).map(Number).sort((a,b)=>a-b);
     function surahRowHtml(s){
       const sp=getSurahPages(s);
-      const isShort=isShortSurah(s);
+      const isCompact=isSurahCard(s);
       const allMem=sp.filter(p=>S.pages.includes(p));
-      const isMemorized=isShort?(S.surahCards[s]&&!S.removedSurahs.has(s)):allMem.length>0;
-      const isFullyMemorized=isShort?isMemorized:allMem.length===sp.length;
+      const isMemorized=allMem.length>0||(isCompact&&S.surahCards[s]&&!S.removedSurahs.has(s));
+      const isFullyMemorized=isCompact?isWholeSurahMemorized(s)&&S.surahCards[s]&&!S.removedSurahs.has(s):allMem.length===sp.length;
       const left=`<div class="surah-row-left"><span class="surah-row-num">${s}</span><span class="surah-row-name">${SURAH_NAMES[s]}</span></div>`;
 
       // Not memorized at all → tap to add
@@ -1310,13 +1416,14 @@ function render(){
       if(!isFullyMemorized)
         return`<div class="surah-row tappable" onclick="openSurah(${s})">${left}<span class="surah-progress partial">${allMem.length} / ${sp.length} ›</span></div>`;
 
-      // Fully memorized — show SRS status inline for all surah types
-      if(isShort){
+      // Compact surahs (under 3 pages) use one surah-level SRS card.
+      if(isCompact){
         if(S.retiredSurahs.has(s))
           return`<div class="surah-row">${left}<div class="page-meta"><span class="retired-tag">Retired</span><span class="restore-btn" onclick="unretireSurah(${s})">restore</span></div></div>`;
         const d=S.surahCards[s]?.due;
         const st=d&&d<=t?`<span class="page-due-now">Due</span>`:`<span class="surah-progress done">✓</span>`;
-        return`<div class="surah-row">${left}<div class="page-meta">${st}<span class="retire-btn" onclick="retireSurah(${s})">retire</span><span class="delete-btn" onclick="removeShortSurah(${s})">×</span></div></div>`;
+        const removeAction=isShortSurah(s)?`removeShortSurah(${s})`:`removeAllSurahPages(${s})`;
+        return`<div class="surah-row">${left}<div class="page-meta">${st}<span class="retire-btn" onclick="retireSurah(${s})">retire</span><span class="delete-btn" onclick="${removeAction}">×</span></div></div>`;
       }
       // Multi-page fully memorized
       const allRetired=allMem.every(p=>S.retired.has(p));
@@ -1339,7 +1446,7 @@ function render(){
     }).join('');
     app.innerHTML=`<div style="margin-bottom:32px"><button class="back-btn" onclick="goHome()"><svg width="9" height="16" viewBox="0 0 9 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1L1 8L8 15"/></svg></button></div>
       <p class="section-title">Revision intervals</p>
-      
+
       <div class="settings-card">
         <div class="setting-row"><span class="setting-label">Forgot</span><div class="setting-right"><input class="days-input" type="number" inputmode="numeric" min="1" max="365" value="${forgotDays}" oninput="autoSaveSetting('forgotDays',this.value)"/><span class="setting-unit">days</span></div></div>
         <div class="setting-row"><span class="setting-label">Hard</span><div class="setting-right"><input class="days-input" type="number" inputmode="numeric" min="1" max="365" value="${hardDays}" oninput="autoSaveSetting('hardDays',this.value)"/><span class="setting-unit">days</span></div></div>
@@ -1391,10 +1498,15 @@ function render(){
     const verse = isStart ? (FIRST_VERSE[surah] || '') : (PAGE_CONTINUATION_VERSE[page] || '');
     const pageItems=S.ratingQueue.filter(i=>i.page===page);
     const si=pageItems.findIndex(i=>i.surah===surah);
-    const pageNote=pageItems.length>1
-      ?`Page ${page} · ${si+1} of ${pageItems.length} surahs`
-      : isStart ? `Page ${page}` : `Page ${page} · continuation`;
-    app.innerHTML=`<div class="top-bar"><button class="top-btn" onclick="goBackFromRating()"><svg width="9" height="16" viewBox="0 0 9 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1L1 8L8 15"/></svg></button><p class="progress-text" style="margin:0">${prog} / ${total}</p></div>
+    const surahPages=getSurahPages(surah);
+    const pageRange=surahPages.length>1?`Pages ${surahPages[0]} → ${surahPages[surahPages.length-1]}`:`Page ${page}`;
+    const pageNote=item.cardType==='surah'
+      ? pageRange
+      : pageItems.length>1
+        ?`Page ${page} · ${si+1} of ${pageItems.length} surahs`
+        : isStart ? `Page ${page}` : `Page ${page} · continuation`;
+    const backLabel=S.ratingIdx>0?'Previous':'Back';
+    app.innerHTML=`<div class="top-bar"><button class="top-btn" onclick="goBackFromRating()" title="${backLabel}" aria-label="${backLabel}"><svg width="9" height="16" viewBox="0 0 9 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1L1 8L8 15"/></svg></button><p class="progress-text" style="margin:0">${prog} / ${total}</p></div>
       <p class="date">${t}</p>
       <div class="rating-main">
         <div class="rating-surah-name">${SURAH_NAMES[surah]}</div>
@@ -1415,8 +1527,7 @@ function render(){
     const forgot=Object.values(S.pageRatings).flat().filter(r=>r===1).length;
     const good=Object.values(S.pageRatings).flat().filter(r=>r>=3).length;
     const total=S.ratingQueue.length;
-    const upcoming={};
-    for(const p of S.pages){const d=S.cards[p]?.due;if(d&&!S.retired.has(p)){if(!upcoming[d])upcoming[d]=0;upcoming[d]++;}}
+    const upcoming=getUpcoming();
     const nextDates=Object.keys(upcoming).sort().slice(0,4);
     app.innerHTML=`<h1>Done</h1><p class="date">${t}</p>
       <p class="summary" style="margin-top:8px"><strong>${total}</strong> rated · <strong>${good}</strong> solid · <strong>${forgot}</strong> forgot</p>
