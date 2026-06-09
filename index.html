@@ -44,6 +44,8 @@
       display: inline-flex; align-items: center; line-height: 1;
     }
     .top-btn:active { color: var(--ink); }
+    .top-btn:disabled { opacity: 0.28; cursor: default; }
+    .top-btn:disabled:active { color: var(--ink-2); }
     .back-btn {
       background: var(--surface); border: none; border-radius: 10px;
       font-size: 15px; font-weight: 500; color: var(--ink);
@@ -1031,8 +1033,8 @@ function getUpcoming(){
 }
 
 // ─── Utils ────────────────────────────────────────────────────────────────────
-function today(){return new Date().toISOString().slice(0,10);}
-function addDays(ds,n){const d=new Date(ds+'T00:00:00');d.setDate(d.getDate()+n);return d.toISOString().slice(0,10);}
+function today(){const d=new Date();const y=d.getFullYear();const m=String(d.getMonth()+1).padStart(2,'0');const day=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${day}`;}
+function addDays(ds,n){const d=new Date(ds+'T00:00:00');d.setDate(d.getDate()+n);const y=d.getFullYear();const m=String(d.getMonth()+1).padStart(2,'0');const day=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${day}`;}
 function intervalLabel(days){if(days<=1)return'Tomorrow';if(days<7)return`${days} days`;if(days===7)return'1 week';if(days<14)return`${days} days`;if(days<30)return`${Math.round(days/7)} weeks`;if(days<60)return'1 month';return`${Math.round(days/30)} months`;}
 
 function calcInterval(card,rating,settings){
@@ -1044,14 +1046,14 @@ function calcInterval(card,rating,settings){
   const ne=rating===2?Math.max(1.3,ease-0.15):rating===4?Math.min(3.0,ease+0.1):ease;
   return{interval:ni,ease:ne,reps:reps+1};
 }
-function applyRating(card,rating,settings){const r=calcInterval(card,rating,settings);const reviewed=today();return{...r,due:addDays(reviewed,r.interval),lastReviewed:reviewed};}
+function applyRating(card,rating,settings,reviewed=today()){const r=calcInterval(card,rating,settings);return{...r,due:addDays(reviewed,r.interval),lastReviewed:reviewed};}
 function previewLabels(card,settings){return{1:intervalLabel(calcInterval(card,1,settings).interval),2:intervalLabel(calcInterval(card,2,settings).interval),3:intervalLabel(calcInterval(card,3,settings).interval),4:intervalLabel(calcInterval(card,4,settings).interval)};}
 
 // ─── State ────────────────────────────────────────────────────────────────────
 const S={
   screen:'home', pages:loadPages(), cards:{}, settings:loadSettings(), retired:loadRetired(),
   surahCards:{}, retiredSurahs:loadSurahRetired(), removedSurahs:loadRemovedSurahs(),
-  ratingQueue:[], ratingIdx:0, pageRatings:{}, surahRatings:{}, ratingHistory:[], moreScrollY:0, openJuzs:new Set(),
+  ratingQueue:[], ratingIdx:0, ratingDate:null, pageRatings:{}, surahRatings:{}, ratingHistory:[], moreScrollY:0, openJuzs:new Set(),
   selectMode:false, selectedForRating:new Set(),
   selectedSurah:null, selection:new Set(),
 };
@@ -1094,17 +1096,23 @@ function toggleSelectPage(p){S.selectedForRating.has(p)?S.selectedForRating.dele
 function startRating(pagesToRate=null){
   const due=pagesToRate||getDue(S.cards,S.pages);
   S.ratingQueue=buildRatingQueue(due);
-  S.ratingIdx=0;S.pageRatings={};S.surahRatings={};S.ratingHistory=[];
+  S.ratingIdx=0;S.ratingDate=today();S.pageRatings={};S.surahRatings={};S.ratingHistory=[];
   S.selectMode=false;S.selectedForRating=new Set();
   S.screen='rating';render();
 }
 function goBackFromRating(){
   if(S.ratingIdx>0){undoLastRating();render();return;}
-  S.screen='home'; S.ratingQueue=[]; S.ratingIdx=0; S.pageRatings={}; S.surahRatings={}; S.ratingHistory=[]; render();
+  exitRating();
+}
+function previousRating(){
+  if(S.ratingIdx>0){undoLastRating();render();}
+}
+function exitRating(){
+  S.screen='home'; S.ratingQueue=[]; S.ratingIdx=0; S.ratingDate=null; S.pageRatings={}; S.surahRatings={}; S.ratingHistory=[]; render();
 }
 function startRatingSingle(p){
   S.ratingQueue=buildRatingQueue([p]);
-  S.ratingIdx=0;S.pageRatings={};S.surahRatings={};S.ratingHistory=[];
+  S.ratingIdx=0;S.ratingDate=today();S.pageRatings={};S.surahRatings={};S.ratingHistory=[];
   S.selectMode=false;
   S.screen='rating';render();
 }
@@ -1118,12 +1126,12 @@ function rate(r){
   if(item.cardType==='surah'){
     if(!S.surahRatings[item.surah])S.surahRatings[item.surah]=[];
     S.surahRatings[item.surah].push(r);
-    S.surahCards[item.surah]=applyRating(S.surahCards[item.surah],r,S.settings);
+    S.surahCards[item.surah]=applyRating(S.surahCards[item.surah],r,S.settings,S.ratingDate||today());
     saveSurahCards(S.surahCards);
   } else {
     if(!S.pageRatings[item.page])S.pageRatings[item.page]=[];
     S.pageRatings[item.page].push(r);
-    S.cards[item.page]=applyRating(S.cards[item.page],r,S.settings);
+    S.cards[item.page]=applyRating(S.cards[item.page],r,S.settings,S.ratingDate||today());
     saveCards(S.cards);
   }
   S.ratingIdx++;
@@ -1505,9 +1513,9 @@ function render(){
       : pageItems.length>1
         ?`Page ${page} · ${si+1} of ${pageItems.length} surahs`
         : isStart ? `Page ${page}` : `Page ${page} · continuation`;
-    const backLabel=S.ratingIdx>0?'Previous':'Back';
-    app.innerHTML=`<div class="top-bar"><button class="top-btn" onclick="goBackFromRating()" title="${backLabel}" aria-label="${backLabel}"><svg width="9" height="16" viewBox="0 0 9 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1L1 8L8 15"/></svg></button><p class="progress-text" style="margin:0">${prog} / ${total}</p></div>
-      <p class="date">${t}</p>
+    const reviewDate=S.ratingDate||t;
+    app.innerHTML=`<div class="top-bar"><button class="top-btn" onclick="previousRating()" title="Previous" aria-label="Previous"${S.ratingIdx>0?'':' disabled'}><svg width="9" height="16" viewBox="0 0 9 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1L1 8L8 15"/></svg></button><p class="progress-text" style="margin:0">${prog} / ${total}</p><button class="top-btn" onclick="exitRating()" title="Exit revision" aria-label="Exit revision">Exit</button></div>
+      <p class="date">${reviewDate}</p>
       <div class="rating-main">
         <div class="rating-surah-name">${SURAH_NAMES[surah]}</div>
         ${verse?`<div class="rating-arabic">${verse}</div>`:''}
@@ -1529,7 +1537,8 @@ function render(){
     const total=S.ratingQueue.length;
     const upcoming=getUpcoming();
     const nextDates=Object.keys(upcoming).sort().slice(0,4);
-    app.innerHTML=`<h1>Done</h1><p class="date">${t}</p>
+    const reviewDate=S.ratingDate||t;
+    app.innerHTML=`<h1>Done</h1><p class="date">${reviewDate}</p>
       <p class="summary" style="margin-top:8px"><strong>${total}</strong> rated · <strong>${good}</strong> solid · <strong>${forgot}</strong> forgot</p>
       <div style="margin-top:40px"><p class="label">Upcoming</p>
         ${nextDates.map(d=>`<div class="upcoming-item"><span class="upcoming-date">${d===t?'Today (retry)':d}</span><span class="upcoming-count">${upcoming[d]} page${upcoming[d]>1?'s':''}</span></div>`).join('')}
