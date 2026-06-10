@@ -1,9 +1,12 @@
-const CACHE_NAME = 'quranki-v8';
+const CACHE_NAME = 'quranki-v9';
 const APP_SHELL = [
   './',
   './index.html',
   './manifest.webmanifest',
-  './icon.svg'
+  './icon.svg',
+  './assets/styles.css',
+  './src/quran-data.js',
+  './src/app.js'
 ];
 
 self.addEventListener('install', event => {
