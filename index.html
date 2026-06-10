@@ -19,6 +19,18 @@
       --line:    #e2ddd6;   /* dividers */
       --btn:     #1c1814;   /* primary button fill */
       --btn-txt: #f5f1eb;   /* primary button text */
+      --modal-shade: rgba(28,24,20,0.35);
+    }
+    body.dark {
+      --bg:      #17130f;
+      --surface: #241f19;
+      --ink:     #f2ece4;
+      --ink-2:   #c5b8a9;
+      --ink-3:   #817669;
+      --line:    #332b23;
+      --btn:     #f2ece4;
+      --btn-txt: #17130f;
+      --modal-shade: rgba(0,0,0,0.58);
     }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -49,8 +61,9 @@
     .back-btn {
       background: var(--surface); border: none; border-radius: 10px;
       font-size: 15px; font-weight: 500; color: var(--ink);
-      padding: 9px 16px; cursor: pointer; touch-action: manipulation;
+      min-width: 42px; min-height: 36px; padding: 9px 16px; cursor: pointer; touch-action: manipulation;
       -webkit-user-select: none; user-select: none;
+      display: inline-flex; align-items: center; justify-content: center;
     }
     .back-btn:active { opacity: 0.7; }
     .date { font-size: 13px; color: var(--ink-3); margin-top: 3px; margin-bottom: 28px; }
@@ -161,13 +174,23 @@
       font-size: 26px; color: var(--ink); direction: rtl; line-height: 1.9; margin-bottom: 14px;
     }
     .rating-page-lbl { font-size: 13px; color: var(--ink-3); }
-    .rating-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .rating-nav { display: grid; grid-template-columns: 44px 1fr 44px; gap: 10px; align-items: stretch; }
+    .rating-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .rating-arrow {
+      border: 1.5px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--ink);
+      cursor: pointer; touch-action: manipulation; display: flex; align-items: center; justify-content: center;
+      -webkit-user-select: none; user-select: none;
+    }
+    .rating-arrow:active { opacity: 0.72; }
+    .rating-arrow:disabled { opacity: 0.28; cursor: default; }
     .r-btn {
       display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
       min-height: 68px; border: 1.5px solid var(--line); border-radius: 12px; background: var(--bg);
-      cursor: pointer; touch-action: manipulation; -webkit-user-select: none; user-select: none; padding: 12px;
+      cursor: pointer; touch-action: manipulation; -webkit-user-select: none; user-select: none; padding: 10px 8px;
     }
     .r-btn:active { background: var(--surface); }
+    .r-btn.selected { border-color: var(--ink); background: var(--btn); }
+    .r-btn.selected .r-label, .r-btn.selected .r-when { color: var(--btn-txt); }
     .r-label { font-size: 15px; font-weight: 600; color: var(--ink); }
     .r-when  { font-size: 12px; color: var(--ink-3); }
 
@@ -221,6 +244,12 @@
       -webkit-appearance: none; appearance: none; outline: none;
     }
     .setting-unit { font-size: 13px; color: var(--ink-3); }
+    .theme-toggle {
+      width: 50px; height: 30px; border: none; border-radius: 999px; background: var(--surface);
+      padding: 3px; cursor: pointer; touch-action: manipulation; display: flex; align-items: center;
+    }
+    .theme-toggle-knob { width: 24px; height: 24px; border-radius: 50%; background: var(--ink); transition: transform 0.18s ease; }
+    .theme-toggle.on .theme-toggle-knob { transform: translateX(20px); }
     .settings-hint { font-size: 13px; color: var(--ink-3); margin-bottom: 24px; line-height: 1.6; }
 
     /* ── All done / Upcoming ──────────────────────────────────────── */
@@ -239,7 +268,7 @@
 
     /* ── Modal ────────────────────────────────────────────────────── */
     .modal-overlay {
-      position: fixed; inset: 0; background: rgba(28,24,20,0.35);
+      position: fixed; inset: 0; background: var(--modal-shade);
       display: flex; align-items: flex-end; justify-content: center;
       z-index: 100; padding: 0 16px max(20px, env(safe-area-inset-bottom, 20px));
     }
@@ -948,9 +977,14 @@ function buildRatingQueue(duePages) {
 const KEY_CARDS='hifdh_v1', KEY_PAGES='hifdh_pages', KEY_SETTINGS='hifdh_settings', KEY_RETIRED='hifdh_retired';
 const KEY_SURAH_CARDS='hifdh_surah_v1', KEY_SURAH_RETIRED='hifdh_surah_retired', KEY_SURAH_REMOVED='hifdh_surah_removed';
 const DEFAULT_PAGES=[];
-const DEFAULT_SETTINGS={forgotDays:1,hardDays:3,goodDays:7,easyDays:10};
+const DEFAULT_SETTINGS={forgotDays:1,struggledDays:3,easyDays:10,darkMode:false};
 
-const loadSettings=()=>{const r=localStorage.getItem(KEY_SETTINGS);return r?{...DEFAULT_SETTINGS,...JSON.parse(r)}:{...DEFAULT_SETTINGS};};
+const loadSettings=()=>{
+  const r=localStorage.getItem(KEY_SETTINGS);
+  const raw=r?JSON.parse(r):{};
+  if(raw.struggledDays===undefined&&raw.hardDays!==undefined)raw.struggledDays=raw.hardDays;
+  return {...DEFAULT_SETTINGS,...raw};
+};
 const saveSettings=s=>localStorage.setItem(KEY_SETTINGS,JSON.stringify(s));
 const loadPages=()=>{const r=localStorage.getItem(KEY_PAGES);if(r)return JSON.parse(r);const p=[...DEFAULT_PAGES];localStorage.setItem(KEY_PAGES,JSON.stringify(p));return p;};
 const savePages=p=>localStorage.setItem(KEY_PAGES,JSON.stringify([...p].sort((a,b)=>a-b)));
@@ -1036,24 +1070,23 @@ function getUpcoming(){
 function today(){const d=new Date();const y=d.getFullYear();const m=String(d.getMonth()+1).padStart(2,'0');const day=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${day}`;}
 function addDays(ds,n){const d=new Date(ds+'T00:00:00');d.setDate(d.getDate()+n);const y=d.getFullYear();const m=String(d.getMonth()+1).padStart(2,'0');const day=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${day}`;}
 function intervalLabel(days){if(days<=1)return'Tomorrow';if(days<7)return`${days} days`;if(days===7)return'1 week';if(days<14)return`${days} days`;if(days<30)return`${Math.round(days/7)} weeks`;if(days<60)return'1 month';return`${Math.round(days/30)} months`;}
+function settingIntervalLabel(days){return `${days} day${days===1?'':'s'}`;}
 
 function calcInterval(card,rating,settings){
-  let{interval,ease,reps}=card;
+  let{ease,reps}=card;
   if(rating===1)return{interval:settings.forgotDays,ease:Math.max(1.3,ease-0.2),reps:0};
-  let ni;
-  if(reps===0)ni=rating===2?settings.hardDays:rating===3?settings.goodDays:settings.easyDays;
-  else{const base=rating===2?settings.hardDays:rating===3?settings.goodDays:settings.easyDays;const fac=rating===2?0.8:rating===4?ease*1.3:ease;ni=Math.max(base,Math.round(interval*fac));}
-  const ne=rating===2?Math.max(1.3,ease-0.15):rating===4?Math.min(3.0,ease+0.1):ease;
-  return{interval:ni,ease:ne,reps:reps+1};
+  const interval=rating===2?settings.struggledDays:settings.easyDays;
+  const ne=rating===2?Math.max(1.3,ease-0.15):Math.min(3.0,ease+0.1);
+  return{interval,ease:ne,reps:reps+1};
 }
 function applyRating(card,rating,settings,reviewed=today()){const r=calcInterval(card,rating,settings);return{...r,due:addDays(reviewed,r.interval),lastReviewed:reviewed};}
-function previewLabels(card,settings){return{1:intervalLabel(calcInterval(card,1,settings).interval),2:intervalLabel(calcInterval(card,2,settings).interval),3:intervalLabel(calcInterval(card,3,settings).interval),4:intervalLabel(calcInterval(card,4,settings).interval)};}
+function previewLabels(_card,settings){return{1:settingIntervalLabel(settings.forgotDays),2:settingIntervalLabel(settings.struggledDays),3:settingIntervalLabel(settings.easyDays)};}
 
 // ─── State ────────────────────────────────────────────────────────────────────
 const S={
   screen:'home', pages:loadPages(), cards:{}, settings:loadSettings(), retired:loadRetired(),
   surahCards:{}, retiredSurahs:loadSurahRetired(), removedSurahs:loadRemovedSurahs(),
-  ratingQueue:[], ratingIdx:0, ratingDate:null, pageRatings:{}, surahRatings:{}, ratingHistory:[], moreScrollY:0, openJuzs:new Set(),
+  ratingQueue:[], ratingIdx:0, ratingDate:null, pageRatings:{}, surahRatings:{}, ratingHistory:[], pendingRating:null, moreScrollY:0, openJuzs:new Set(),
   selectMode:false, selectedForRating:new Set(),
   selectedSurah:null, selection:new Set(),
 };
@@ -1088,7 +1121,12 @@ function openSurah(n){
     S.selectedSurah=n;S.selection=new Set(sp.filter(p=>S.pages.includes(p)));S.screen='pagePicker';render();
   }
 }
+function applyTheme(){
+  document.body.classList.toggle('dark',!!S.settings.darkMode);
+  document.querySelector('meta[name="theme-color"]').setAttribute('content',S.settings.darkMode?'#17130f':'#f5f1eb');
+}
 function autoSaveSetting(key,val){S.settings[key]=Math.max(1,parseInt(val)||1);saveSettings(S.settings);}
+function toggleDarkMode(){S.settings.darkMode=!S.settings.darkMode;saveSettings(S.settings);applyTheme();render();}
 
 function toggleSelectMode(){S.selectMode=!S.selectMode;S.selectedForRating=new Set();render();}
 function toggleSelectPage(p){S.selectedForRating.has(p)?S.selectedForRating.delete(p):S.selectedForRating.add(p);render();}
@@ -1096,7 +1134,7 @@ function toggleSelectPage(p){S.selectedForRating.has(p)?S.selectedForRating.dele
 function startRating(pagesToRate=null){
   const due=pagesToRate||getDue(S.cards,S.pages);
   S.ratingQueue=buildRatingQueue(due);
-  S.ratingIdx=0;S.ratingDate=today();S.pageRatings={};S.surahRatings={};S.ratingHistory=[];
+  S.ratingIdx=0;S.ratingDate=today();S.pageRatings={};S.surahRatings={};S.ratingHistory=[];S.pendingRating=null;
   S.selectMode=false;S.selectedForRating=new Set();
   S.screen='rating';render();
 }
@@ -1108,15 +1146,17 @@ function previousRating(){
   if(S.ratingIdx>0){undoLastRating();render();}
 }
 function exitRating(){
-  S.screen='home'; S.ratingQueue=[]; S.ratingIdx=0; S.ratingDate=null; S.pageRatings={}; S.surahRatings={}; S.ratingHistory=[]; render();
+  S.screen='home'; S.ratingQueue=[]; S.ratingIdx=0; S.ratingDate=null; S.pageRatings={}; S.surahRatings={}; S.ratingHistory=[]; S.pendingRating=null; render();
 }
 function startRatingSingle(p){
   S.ratingQueue=buildRatingQueue([p]);
-  S.ratingIdx=0;S.ratingDate=today();S.pageRatings={};S.surahRatings={};S.ratingHistory=[];
+  S.ratingIdx=0;S.ratingDate=today();S.pageRatings={};S.surahRatings={};S.ratingHistory=[];S.pendingRating=null;
   S.selectMode=false;
   S.screen='rating';render();
 }
 
+function selectRating(r){S.pendingRating=r;render();}
+function nextRating(){if(!S.pendingRating)return;rate(S.pendingRating);}
 function rate(r){
   const item=S.ratingQueue[S.ratingIdx];
   S.ratingHistory.push({
@@ -1135,6 +1175,7 @@ function rate(r){
     saveCards(S.cards);
   }
   S.ratingIdx++;
+  S.pendingRating=null;
   if(S.ratingIdx>=S.ratingQueue.length)S.screen='done';
   render();
 }
@@ -1152,6 +1193,7 @@ function undoLastRating(){
     saveCards(S.cards);
   }
   S.ratingIdx=Math.max(0,S.ratingIdx-1);
+  S.pendingRating=h.rating;
   S.screen='rating';
 }
 
@@ -1374,6 +1416,7 @@ function renderManageList(pages, retired=false){
 
 // ─── Render ───────────────────────────────────────────────────────────────────
 function render(){
+  applyTheme();
   if(S.screen==='more'){
     S.moreScrollY=window.scrollY;
     S.openJuzs=new Set([...document.querySelectorAll('.juz-details[open]')].map(el=>parseInt(el.querySelector('.juz-summary-num').textContent.replace('Juz ',''))));
@@ -1406,7 +1449,7 @@ function render(){
 
   // MORE — unified surah list (add + manage) + settings
   if(S.screen==='more'){
-    const{forgotDays,hardDays,goodDays,easyDays}=S.settings;
+    const{forgotDays,struggledDays,easyDays,darkMode}=S.settings;
     const groups=surahsByJuz(),juzNums=Object.keys(groups).map(Number).sort((a,b)=>a-b);
     function surahRowHtml(s){
       const sp=getSurahPages(s);
@@ -1456,10 +1499,13 @@ function render(){
       <p class="section-title">Revision intervals</p>
 
       <div class="settings-card">
-        <div class="setting-row"><span class="setting-label">Forgot</span><div class="setting-right"><input class="days-input" type="number" inputmode="numeric" min="1" max="365" value="${forgotDays}" oninput="autoSaveSetting('forgotDays',this.value)"/><span class="setting-unit">days</span></div></div>
-        <div class="setting-row"><span class="setting-label">Hard</span><div class="setting-right"><input class="days-input" type="number" inputmode="numeric" min="1" max="365" value="${hardDays}" oninput="autoSaveSetting('hardDays',this.value)"/><span class="setting-unit">days</span></div></div>
-        <div class="setting-row"><span class="setting-label">Good</span><div class="setting-right"><input class="days-input" type="number" inputmode="numeric" min="1" max="365" value="${goodDays}" oninput="autoSaveSetting('goodDays',this.value)"/><span class="setting-unit">days</span></div></div>
+        <div class="setting-row"><span class="setting-label">Forgot</span><div class="setting-right"><input class="days-input" type="number" inputmode="numeric" min="1" max="365" value="${forgotDays}" oninput="autoSaveSetting('forgotDays',this.value)"/><span class="setting-unit">day</span></div></div>
+        <div class="setting-row"><span class="setting-label">Struggled</span><div class="setting-right"><input class="days-input" type="number" inputmode="numeric" min="1" max="365" value="${struggledDays}" oninput="autoSaveSetting('struggledDays',this.value)"/><span class="setting-unit">days</span></div></div>
         <div class="setting-row"><span class="setting-label">Easy</span><div class="setting-right"><input class="days-input" type="number" inputmode="numeric" min="1" max="365" value="${easyDays}" oninput="autoSaveSetting('easyDays',this.value)"/><span class="setting-unit">days</span></div></div>
+      </div>
+      <p class="section-title" style="margin-top:32px">Appearance</p>
+      <div class="settings-card">
+        <div class="setting-row"><span class="setting-label">Dark mode</span><button class="theme-toggle${darkMode?' on':''}" onclick="toggleDarkMode()" aria-label="Toggle dark mode" aria-pressed="${darkMode?'true':'false'}"><span class="theme-toggle-knob"></span></button></div>
       </div>
       <p class="section-title" style="margin-top:48px">Surahs</p><div>${surahRows}</div>
       <span class="reset-link" onclick="hardReset()">reset all progress</span>`;
@@ -1514,32 +1560,36 @@ function render(){
         ?`Page ${page} · ${si+1} of ${pageItems.length} surahs`
         : isStart ? `Page ${page}` : `Page ${page} · continuation`;
     const reviewDate=S.ratingDate||t;
-    app.innerHTML=`<div class="top-bar"><button class="top-btn" onclick="previousRating()" title="Previous" aria-label="Previous"${S.ratingIdx>0?'':' disabled'}><svg width="9" height="16" viewBox="0 0 9 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1L1 8L8 15"/></svg></button><p class="progress-text" style="margin:0">${prog} / ${total}</p><button class="top-btn" onclick="exitRating()" title="Exit revision" aria-label="Exit revision">Exit</button></div>
+    app.innerHTML=`<div class="top-bar"><button class="back-btn" onclick="exitRating()" title="Exit revision" aria-label="Exit revision"><svg width="9" height="16" viewBox="0 0 9 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1L1 8L8 15"/></svg></button><p class="progress-text" style="margin:0">${prog} / ${total}</p><span style="width:42px" aria-hidden="true"></span></div>
       <p class="date">${reviewDate}</p>
       <div class="rating-main">
         <div class="rating-surah-name">${SURAH_NAMES[surah]}</div>
         ${verse?`<div class="rating-arabic">${verse}</div>`:''}
         <div class="rating-page-lbl">${pageNote}</div>
       </div>
-      <div class="rating-grid">
-        <button class="r-btn" onclick="rate(1)"><span class="r-label">Forgot</span><span class="r-when">${preview[1]}</span></button>
-        <button class="r-btn" onclick="rate(2)"><span class="r-label">Hard</span><span class="r-when">${preview[2]}</span></button>
-        <button class="r-btn" onclick="rate(3)"><span class="r-label">Good</span><span class="r-when">${preview[3]}</span></button>
-        <button class="r-btn" onclick="rate(4)"><span class="r-label">Easy</span><span class="r-when">${preview[4]}</span></button>
+      <div class="rating-nav">
+        <button class="rating-arrow" onclick="previousRating()" title="Previous surah" aria-label="Previous surah"${S.ratingIdx>0?'':' disabled'}><svg width="9" height="16" viewBox="0 0 9 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1L1 8L8 15"/></svg></button>
+        <div class="rating-options">
+          <button class="r-btn${S.pendingRating===1?' selected':''}" onclick="selectRating(1)"><span class="r-label">Forgot</span><span class="r-when">${preview[1]}</span></button>
+          <button class="r-btn${S.pendingRating===2?' selected':''}" onclick="selectRating(2)"><span class="r-label">Struggled</span><span class="r-when">${preview[2]}</span></button>
+          <button class="r-btn${S.pendingRating===3?' selected':''}" onclick="selectRating(3)"><span class="r-label">Easy</span><span class="r-when">${preview[3]}</span></button>
+        </div>
+        <button class="rating-arrow" onclick="nextRating()" title="Next surah" aria-label="Next surah"${S.pendingRating?'':' disabled'}><svg width="9" height="16" viewBox="0 0 9 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 1L8 8L1 15"/></svg></button>
       </div>`;
     return;
   }
 
   // DONE
   if(S.screen==='done'){
-    const forgot=Object.values(S.pageRatings).flat().filter(r=>r===1).length;
-    const good=Object.values(S.pageRatings).flat().filter(r=>r>=3).length;
+    const allRatings=[...Object.values(S.pageRatings).flat(),...Object.values(S.surahRatings).flat()];
+    const forgot=allRatings.filter(r=>r===1).length;
+    const good=allRatings.filter(r=>r===3).length;
     const total=S.ratingQueue.length;
     const upcoming=getUpcoming();
     const nextDates=Object.keys(upcoming).sort().slice(0,4);
     const reviewDate=S.ratingDate||t;
     app.innerHTML=`<h1>Done</h1><p class="date">${reviewDate}</p>
-      <p class="summary" style="margin-top:8px"><strong>${total}</strong> rated · <strong>${good}</strong> solid · <strong>${forgot}</strong> forgot</p>
+      <p class="summary" style="margin-top:8px"><strong>${total}</strong> rated · <strong>${good}</strong> easy · <strong>${forgot}</strong> forgot</p>
       <div style="margin-top:40px"><p class="label">Upcoming</p>
         ${nextDates.map(d=>`<div class="upcoming-item"><span class="upcoming-date">${d===t?'Today (retry)':d}</span><span class="upcoming-count">${upcoming[d]} page${upcoming[d]>1?'s':''}</span></div>`).join('')}
       </div>
@@ -1548,6 +1598,7 @@ function render(){
   }
 }
 
+applyTheme();
 render();
 </script>
 </body>
