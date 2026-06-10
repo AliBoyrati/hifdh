@@ -5,10 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="apple-mobile-web-app-title" content="Muraja'ah" />
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNyIgZmlsbD0iIzFjMTgxNCIvPjxjaXJjbGUgY3g9IjE1IiBjeT0iMTYiIHI9IjgiIGZpbGw9IiNmNWYxZWIiLz48Y2lyY2xlIGN4PSIxOSIgY3k9IjEzIiByPSI2LjUiIGZpbGw9IiMxYzE4MTQiLz48L3N2Zz4="/>
+  <meta name="apple-mobile-web-app-title" content="Quranki" />
+  <link rel="icon" type="image/svg+xml" href="icon.svg" />
+  <link rel="apple-touch-icon" href="icon.svg" />
+  <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#17130f" />
-  <title>Muraja'ah</title>
+  <title>Quranki</title>
   <style>
     :root {
       --bg:      #f5f1eb;   /* warm off-white — the main background */
@@ -1513,7 +1515,7 @@ function render(){
     const upcomingByDate=getUpcomingByDate();
     const futureDates=Object.keys(upcomingByDate).filter(d=>d>t).sort().slice(0,3);
 
-    app.innerHTML=`<div class="top-bar"><h1>Muraja'ah</h1><button class="top-btn" onclick="goMore()"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="5" x2="18" y2="5"/><line x1="2" y1="10" x2="18" y2="10"/><line x1="2" y1="15" x2="18" y2="15"/><circle cx="7" cy="5" r="2.2" fill="var(--bg)"/><circle cx="13" cy="10" r="2.2" fill="var(--bg)"/><circle cx="8" cy="15" r="2.2" fill="var(--bg)"/></svg></button></div>
+    app.innerHTML=`<div class="top-bar"><h1>Quranki</h1><button class="top-btn" onclick="goMore()"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="5" x2="18" y2="5"/><line x1="2" y1="10" x2="18" y2="10"/><line x1="2" y1="15" x2="18" y2="15"/><circle cx="7" cy="5" r="2.2" fill="var(--bg)"/><circle cx="13" cy="10" r="2.2" fill="var(--bg)"/><circle cx="8" cy="15" r="2.2" fill="var(--bg)"/></svg></button></div>
       <div class="home-content">
         ${due.length?`<section class="section-block">
           <p class="label">Due today</p>
@@ -1653,6 +1655,12 @@ function render(){
 
 applyTheme();
 render();
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js');
+  });
+}
 </script>
 </body>
 </html>
