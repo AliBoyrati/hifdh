@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Muraja'ah" />
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNyIgZmlsbD0iIzFjMTgxNCIvPjxjaXJjbGUgY3g9IjE1IiBjeT0iMTYiIHI9IjgiIGZpbGw9IiNmNWYxZWIiLz48Y2lyY2xlIGN4PSIxOSIgY3k9IjEzIiByPSI2LjUiIGZpbGw9IiMxYzE4MTQiLz48L3N2Zz4="/>
-  <meta name="theme-color" content="#f5f1eb" />
+  <meta name="theme-color" content="#17130f" />
   <title>Muraja'ah</title>
   <style>
     :root {
@@ -239,6 +239,11 @@
     .setting-row   { display: flex; justify-content: space-between; align-items: center; padding: 14px 0; border-bottom: 1px solid var(--line); }
     .setting-row:last-child { border-bottom: none; }
     .setting-label { font-size: 16px; color: var(--ink); }
+    .interval-name-input {
+      width: min(190px, 48vw); background: transparent; border: none; border-bottom: 1px solid transparent;
+      font-size: 16px; color: var(--ink); padding: 8px 0; outline: none;
+    }
+    .interval-name-input:focus { border-bottom-color: var(--line); }
     .setting-right { display: flex; align-items: center; gap: 8px; }
     .days-input {
       width: 52px; background: var(--surface); border: none; border-radius: 8px;
@@ -1008,7 +1013,7 @@ function buildRatingQueue(duePages) {
 const KEY_CARDS='hifdh_v1', KEY_PAGES='hifdh_pages', KEY_SETTINGS='hifdh_settings', KEY_RETIRED='hifdh_retired';
 const KEY_SURAH_CARDS='hifdh_surah_v1', KEY_SURAH_RETIRED='hifdh_surah_retired', KEY_SURAH_REMOVED='hifdh_surah_removed';
 const DEFAULT_PAGES=[];
-const DEFAULT_SETTINGS={forgotDays:1,struggledDays:3,easyDays:10,darkMode:false};
+const DEFAULT_SETTINGS={forgotDays:1,struggledDays:3,easyDays:10,forgotLabel:'Forgot',struggledLabel:'Struggled',easyLabel:'Easy',darkMode:true};
 
 const loadSettings=()=>{
   const r=localStorage.getItem(KEY_SETTINGS);
@@ -1122,6 +1127,8 @@ function formatDate(ds){
 }
 function intervalLabel(days){if(days<=1)return'Tomorrow';if(days<7)return`${days} days`;if(days===7)return'1 week';if(days<14)return`${days} days`;if(days<30)return`${Math.round(days/7)} weeks`;if(days<60)return'1 month';return`${Math.round(days/30)} months`;}
 function settingIntervalLabel(days){return `${days} day${days===1?'':'s'}`;}
+function escapeHtml(value){return String(value).replace(/[&<>\"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[ch]));}
+function escapeAttr(value){return escapeHtml(value).replace(/'/g,'&#39;');}
 
 function calcInterval(card,rating,settings){
   let{ease,reps}=card;
@@ -1132,6 +1139,7 @@ function calcInterval(card,rating,settings){
 }
 function applyRating(card,rating,settings,reviewed=today()){const r=calcInterval(card,rating,settings);return{...r,due:addDays(reviewed,r.interval),lastReviewed:reviewed};}
 function previewLabels(_card,settings){return{1:settingIntervalLabel(settings.forgotDays),2:settingIntervalLabel(settings.struggledDays),3:settingIntervalLabel(settings.easyDays)};}
+function ratingNames(settings){return{1:(settings.forgotLabel||DEFAULT_SETTINGS.forgotLabel).trim()||DEFAULT_SETTINGS.forgotLabel,2:(settings.struggledLabel||DEFAULT_SETTINGS.struggledLabel).trim()||DEFAULT_SETTINGS.struggledLabel,3:(settings.easyLabel||DEFAULT_SETTINGS.easyLabel).trim()||DEFAULT_SETTINGS.easyLabel};}
 
 // ─── State ────────────────────────────────────────────────────────────────────
 const S={
@@ -1177,6 +1185,7 @@ function applyTheme(){
   document.querySelector('meta[name="theme-color"]').setAttribute('content',S.settings.darkMode?'#17130f':'#f5f1eb');
 }
 function autoSaveSetting(key,val){S.settings[key]=Math.max(1,parseInt(val)||1);saveSettings(S.settings);}
+function autoSaveTextSetting(key,val){S.settings[key]=String(val).trim().slice(0,24)||DEFAULT_SETTINGS[key];saveSettings(S.settings);render();}
 function toggleDarkMode(){S.settings.darkMode=!S.settings.darkMode;saveSettings(S.settings);applyTheme();render();}
 
 function toggleSelectMode(){S.selectMode=!S.selectMode;S.selectedForRating=new Set();render();}
@@ -1519,7 +1528,7 @@ function render(){
 
   // MORE — unified surah list (add + manage) + settings
   if(S.screen==='more'){
-    const{forgotDays,struggledDays,easyDays,darkMode}=S.settings;
+    const{forgotDays,struggledDays,easyDays,forgotLabel,struggledLabel,easyLabel,darkMode}=S.settings;
     const groups=surahsByJuz(),juzNums=Object.keys(groups).map(Number).sort((a,b)=>a-b);
     function surahRowHtml(s){
       const sp=getSurahPages(s);
@@ -1569,9 +1578,9 @@ function render(){
       <p class="section-title">Revision intervals</p>
 
       <div class="settings-card">
-        <div class="setting-row"><span class="setting-label">Forgot</span><div class="setting-right"><input class="days-input" type="number" inputmode="numeric" min="1" max="365" value="${forgotDays}" oninput="autoSaveSetting('forgotDays',this.value)"/><span class="setting-unit">day</span></div></div>
-        <div class="setting-row"><span class="setting-label">Struggled</span><div class="setting-right"><input class="days-input" type="number" inputmode="numeric" min="1" max="365" value="${struggledDays}" oninput="autoSaveSetting('struggledDays',this.value)"/><span class="setting-unit">days</span></div></div>
-        <div class="setting-row"><span class="setting-label">Easy</span><div class="setting-right"><input class="days-input" type="number" inputmode="numeric" min="1" max="365" value="${easyDays}" oninput="autoSaveSetting('easyDays',this.value)"/><span class="setting-unit">days</span></div></div>
+        <div class="setting-row"><input class="interval-name-input" aria-label="Rename first interval" type="text" maxlength="24" value="${escapeAttr(forgotLabel)}" onblur="autoSaveTextSetting('forgotLabel',this.value)"/><div class="setting-right"><input class="days-input" type="number" inputmode="numeric" min="1" max="365" value="${forgotDays}" oninput="autoSaveSetting('forgotDays',this.value)"/><span class="setting-unit">${forgotDays===1?'day':'days'}</span></div></div>
+        <div class="setting-row"><input class="interval-name-input" aria-label="Rename second interval" type="text" maxlength="24" value="${escapeAttr(struggledLabel)}" onblur="autoSaveTextSetting('struggledLabel',this.value)"/><div class="setting-right"><input class="days-input" type="number" inputmode="numeric" min="1" max="365" value="${struggledDays}" oninput="autoSaveSetting('struggledDays',this.value)"/><span class="setting-unit">${struggledDays===1?'day':'days'}</span></div></div>
+        <div class="setting-row"><input class="interval-name-input" aria-label="Rename third interval" type="text" maxlength="24" value="${escapeAttr(easyLabel)}" onblur="autoSaveTextSetting('easyLabel',this.value)"/><div class="setting-right"><input class="days-input" type="number" inputmode="numeric" min="1" max="365" value="${easyDays}" oninput="autoSaveSetting('easyDays',this.value)"/><span class="setting-unit">${easyDays===1?'day':'days'}</span></div></div>
       </div>
       <p class="section-title" style="margin-top:32px">Appearance</p>
       <div class="settings-card">
@@ -1615,6 +1624,7 @@ function render(){
     const prog=S.ratingIdx+1,total=S.ratingQueue.length;
     const card=item.cardType==='surah'?(S.surahCards[surah]||{interval:0,ease:2.5,reps:0,due:today()}):S.cards[page];
     const preview=previewLabels(card,S.settings);
+    const names=ratingNames(S.settings);
     const pageNote=formatPageRuns(pagesForRatingSurah(surah));
     const verse=getPageVerse(page,surah)||'';
     app.innerHTML=`<div class="top-bar"><button class="back-btn" onclick="exitRating()" title="Exit revision" aria-label="Exit revision"><svg width="9" height="16" viewBox="0 0 9 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1L1 8L8 15"/></svg></button><p class="progress-text" style="margin:0">${prog} / ${total}</p><span style="width:42px" aria-hidden="true"></span></div>
@@ -1625,9 +1635,9 @@ function render(){
       <div class="rating-nav">
         <button class="rating-arrow" onclick="previousRating()" title="Previous surah" aria-label="Previous surah"${S.ratingIdx>0?'':' disabled'}><svg width="9" height="16" viewBox="0 0 9 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1L1 8L8 15"/></svg></button>
         <div class="rating-options">
-          <button class="r-btn${S.pendingRating===1?' selected':''}" onclick="selectRating(1)"><span class="r-label">Forgot</span><span class="r-when">${preview[1]}</span></button>
-          <button class="r-btn${S.pendingRating===2?' selected':''}" onclick="selectRating(2)"><span class="r-label">Struggled</span><span class="r-when">${preview[2]}</span></button>
-          <button class="r-btn${S.pendingRating===3?' selected':''}" onclick="selectRating(3)"><span class="r-label">Easy</span><span class="r-when">${preview[3]}</span></button>
+          <button class="r-btn${S.pendingRating===1?' selected':''}" onclick="selectRating(1)"><span class="r-label">${escapeHtml(names[1])}</span><span class="r-when">${preview[1]}</span></button>
+          <button class="r-btn${S.pendingRating===2?' selected':''}" onclick="selectRating(2)"><span class="r-label">${escapeHtml(names[2])}</span><span class="r-when">${preview[2]}</span></button>
+          <button class="r-btn${S.pendingRating===3?' selected':''}" onclick="selectRating(3)"><span class="r-label">${escapeHtml(names[3])}</span><span class="r-when">${preview[3]}</span></button>
         </div>
         <button class="rating-arrow" onclick="nextRating()" title="Next surah" aria-label="Next surah"${S.pendingRating?'':' disabled'}><svg width="9" height="16" viewBox="0 0 9 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 1L8 8L1 15"/></svg></button>
       </div>`;
