@@ -190,6 +190,19 @@
       text-align: justify; text-align-last: center; unicode-bidi: plaintext; overflow-y: auto; overscroll-behavior: contain;
       max-height: calc(100dvh - 300px); padding: 0 2px 8px;
     }
+    .mushaf-pages {
+      display: flex; flex-direction: column; gap: 14px; overflow-y: auto; overscroll-behavior: contain;
+      max-height: calc(100dvh - 300px); padding: 2px 0 8px; margin-bottom: 14px;
+    }
+    .mushaf-page {
+      font-family: 'KFGQPC Uthmanic Script HAFS', 'KFGQPC Hafs Uthmanic Script', 'UthmanicHafs', 'Amiri Quran', 'Scheherazade New', 'Geeza Pro', 'Traditional Arabic', 'Arabic Typesetting', serif;
+      font-size: var(--mushaf-font-size, 28px); line-height: var(--mushaf-line-height, 2.05); color: var(--mushaf-text-color, var(--ink));
+      direction: rtl; text-align: justify; text-align-last: center; unicode-bidi: plaintext;
+      background: var(--mushaf-page-color, var(--surface)); border: 1px solid var(--line); border-radius: 18px;
+      padding: 18px 16px 20px; box-shadow: 0 1px 0 var(--line), 0 10px 26px rgba(0,0,0,0.08);
+    }
+    body.dark .mushaf-page { box-shadow: 0 1px 0 var(--line), 0 10px 26px rgba(0,0,0,0.28); }
+    .mushaf-page .ayah-mark { color: var(--mushaf-ayah-color, var(--ink-2)); }
     .ayah-mark {
       display: inline-flex; align-items: center; justify-content: center;
       min-width: 1.9em; margin: 0 0.12em; color: var(--ink);
@@ -302,6 +315,11 @@
       -webkit-appearance: none; appearance: none; outline: none;
     }
     .setting-unit { font-size: 13px; color: var(--ink-3); min-width: 30px; text-align: left; }
+    .range-input { width: 124px; accent-color: var(--ink); }
+    .color-input {
+      width: 42px; height: 34px; border: 1px solid var(--line); border-radius: 10px;
+      background: var(--surface); padding: 3px; cursor: pointer;
+    }
     .theme-toggle {
       width: 50px; height: 30px; border: none; border-radius: 999px; background: var(--surface);
       padding: 3px; cursor: pointer; touch-action: manipulation; display: flex; align-items: center;
@@ -1065,7 +1083,10 @@ const KEY_CARDS='hifdh_v1', KEY_PAGES='hifdh_pages', KEY_SETTINGS='hifdh_setting
 const KEY_SURAH_CARDS='hifdh_surah_v1', KEY_SURAH_RETIRED='hifdh_surah_retired', KEY_SURAH_REMOVED='hifdh_surah_removed';
 const KEY_REVISION_MODE='hifdh_revision_mode', KEY_PAGE_TEXT='hifdh_page_text_cache';
 const DEFAULT_PAGES=[];
-const DEFAULT_SETTINGS={forgotDays:1,struggledDays:3,easyDays:10,forgotLabel:'Forgot',struggledLabel:'Struggled',easyLabel:'Easy',darkMode:true};
+const DEFAULT_SETTINGS={
+  forgotDays:1,struggledDays:3,easyDays:10,forgotLabel:'Forgot',struggledLabel:'Struggled',easyLabel:'Easy',darkMode:true,
+  mushafFontSize:28,mushafLineHeight:2.05,mushafTextColor:'#f2ece4',mushafPageColor:'#241f19',mushafAyahColor:'#c5b8a9'
+};
 
 const loadSettings=()=>{
   const r=localStorage.getItem(KEY_SETTINGS);
@@ -1243,6 +1264,9 @@ function applyTheme(){
 }
 function autoSaveSetting(key,val,el){const days=Math.max(1,parseInt(val)||1);S.settings[key]=days;saveSettings(S.settings);if(el){const unit=el.parentElement?.querySelector('.setting-unit');if(unit)unit.textContent=days===1?'day':'days';}}
 function autoSaveTextSetting(key,val){S.settings[key]=String(val).trim().slice(0,24)||DEFAULT_SETTINGS[key];saveSettings(S.settings);render();}
+function autoSaveNumberSetting(key,val,min,max,el){const num=Math.min(max,Math.max(min,parseFloat(val)||DEFAULT_SETTINGS[key]));S.settings[key]=num;saveSettings(S.settings);if(el){const out=el.parentElement?.querySelector('.setting-unit');if(out)out.textContent=key==='mushafLineHeight'?num.toFixed(2):`${Math.round(num)}px`;}}
+function autoSaveColorSetting(key,val){if(/^#[0-9a-f]{6}$/i.test(val)){S.settings[key]=val;saveSettings(S.settings);}}
+function resetMushafAppearance(){['mushafFontSize','mushafLineHeight','mushafTextColor','mushafPageColor','mushafAyahColor'].forEach(k=>S.settings[k]=DEFAULT_SETTINGS[k]);saveSettings(S.settings);render();}
 function toggleDarkMode(){S.settings.darkMode=!S.settings.darkMode;saveSettings(S.settings);applyTheme();render();}
 function setRevisionMode(mode){S.revisionMode=mode==='test'?'test':'salah';S.wordsRevealed=false;saveRevisionMode(S.revisionMode);render();}
 function revealCurrentPrompt(){S.wordsRevealed=true;render();}
@@ -1264,12 +1288,22 @@ function firstWordsHtml(html,count=8){
   return words.length?`${escapeHtml(words.join(' '))} …`:'';
 }
 function currentReviewPages(item){return item.cardType==='surah'?getSurahPages(item.surah):[item.page];}
+function getCachedPageText(page){
+  const text=normalizePageText(S.pageTextCache[page]);
+  return pageTextHasAyahMarks(text)?text:escapeHtml(text);
+}
 function getCachedReviewText(item){
-  const pages=currentReviewPages(item), texts=pages.map(p=>{
-    const text=normalizePageText(S.pageTextCache[p]);
-    return pageTextHasAyahMarks(text)?text:escapeHtml(text);
-  });
+  const texts=currentReviewPages(item).map(getCachedPageText);
   return texts.every(Boolean)?texts.join('<br><br>'):'';
+}
+function mushafStyle(){
+  const s=S.settings;
+  return `--mushaf-font-size:${s.mushafFontSize||DEFAULT_SETTINGS.mushafFontSize}px;--mushaf-line-height:${s.mushafLineHeight||DEFAULT_SETTINGS.mushafLineHeight};--mushaf-text-color:${s.mushafTextColor||DEFAULT_SETTINGS.mushafTextColor};--mushaf-page-color:${s.mushafPageColor||DEFAULT_SETTINGS.mushafPageColor};--mushaf-ayah-color:${s.mushafAyahColor||DEFAULT_SETTINGS.mushafAyahColor}`;
+}
+function reviewPageTextHtml(item){
+  const pages=currentReviewPages(item), texts=pages.map(p=>({page:p,text:getCachedPageText(p)}));
+  if(!texts.every(t=>t.text))return '';
+  return `<div class="mushaf-pages" aria-label="Quran page text${pages.length>1?'s':''}">${texts.map(t=>`<div class="mushaf-page" style="${mushafStyle()}" aria-label="Quran page ${t.page}">${t.text}</div>`).join('')}</div>`;
 }
 function fetchPageText(p){
   if((S.pageTextCache[p]&&pageTextHasAyahMarks(S.pageTextCache[p]))||S.loadingPageTexts.has(p)||S.pageTextErrors.has(p))return;
@@ -1649,7 +1683,7 @@ function render(){
 
   // MORE — unified surah list (add + manage) + settings
   if(S.screen==='more'){
-    const{forgotDays,struggledDays,easyDays,forgotLabel,struggledLabel,easyLabel,darkMode}=S.settings;
+    const{forgotDays,struggledDays,easyDays,forgotLabel,struggledLabel,easyLabel,darkMode,mushafFontSize,mushafLineHeight,mushafTextColor,mushafPageColor,mushafAyahColor}=S.settings;
     const groups=surahsByJuz(),juzNums=Object.keys(groups).map(Number).sort((a,b)=>a-b);
     function surahRowHtml(s){
       const sp=getSurahPages(s);
@@ -1705,6 +1739,12 @@ function render(){
       <p class="section-title" style="margin-top:32px">Appearance</p>
       <div class="settings-card">
         <div class="setting-row"><span class="setting-label">Dark mode</span><button class="theme-toggle${darkMode?' on':''}" onclick="toggleDarkMode()" aria-label="Toggle dark mode" aria-pressed="${darkMode?'true':'false'}"><span class="theme-toggle-knob"></span></button></div>
+        <div class="setting-row"><span class="setting-label">Quran text size</span><div class="setting-right"><input class="range-input" aria-label="Quran text size" type="range" min="20" max="44" step="1" value="${mushafFontSize}" oninput="autoSaveNumberSetting('mushafFontSize',this.value,20,44,this)"/><span class="setting-unit">${Math.round(mushafFontSize)}px</span></div></div>
+        <div class="setting-row"><span class="setting-label">Quran line height</span><div class="setting-right"><input class="range-input" aria-label="Quran line height" type="range" min="1.5" max="2.8" step="0.05" value="${mushafLineHeight}" oninput="autoSaveNumberSetting('mushafLineHeight',this.value,1.5,2.8,this)"/><span class="setting-unit">${Number(mushafLineHeight).toFixed(2)}</span></div></div>
+        <div class="setting-row"><span class="setting-label">Text color</span><input class="color-input" aria-label="Quran text color" type="color" value="${escapeAttr(mushafTextColor)}" oninput="autoSaveColorSetting('mushafTextColor',this.value)"/></div>
+        <div class="setting-row"><span class="setting-label">Page color</span><input class="color-input" aria-label="Quran page color" type="color" value="${escapeAttr(mushafPageColor)}" oninput="autoSaveColorSetting('mushafPageColor',this.value)"/></div>
+        <div class="setting-row"><span class="setting-label">Ayah number color</span><input class="color-input" aria-label="Ayah number color" type="color" value="${escapeAttr(mushafAyahColor)}" oninput="autoSaveColorSetting('mushafAyahColor',this.value)"/></div>
+        <div class="setting-row"><span class="setting-label">Reset Quran style</span><button class="top-btn" onclick="resetMushafAppearance()">Reset</button></div>
       </div>
       <p class="section-title" style="margin-top:48px">Surahs</p><div>${surahRows}</div>
       <span class="reset-link" onclick="hardReset()">reset all progress</span>`;
@@ -1751,11 +1791,11 @@ function render(){
     const reviewPages=currentReviewPages(item);
     const cachedReviewText=getCachedReviewText(item);
     const reviewFailed=reviewPages.some(p=>S.pageTextErrors.has(p));
-    const loadingHtml='<p class="page-text-loading">Loading full page text…</p>';
-    const errorHtml='<div class="revision-prompt"><p class="page-text-loading">Could not load the full page text. Check your connection and try again.</p><button class="show-words-btn" onclick="retryCurrentReviewText()">Retry</button></div>';
+    const loadingHtml=`<p class="page-text-loading">Loading ${testing?'Quran page':'first-word prompt'}…</p>`;
+    const errorHtml=`<div class="revision-prompt"><p class="page-text-loading">Could not load the ${testing?'Quran page':'first-word prompt'}. Check your connection and try again.</p><button class="show-words-btn" onclick="retryCurrentReviewText()">Retry</button></div>`;
     const promptHtml=!testing
       ?(cachedReviewText?`<div class="revision-prompt list-preview"><div class="hidden-words"><div class="hidden-words-pattern" aria-label="First words of the page">${firstWordsHtml(cachedReviewText)}</div></div><p class="revision-hint">List mode shows only the first few words as a prompt.</p></div>`:(reviewFailed?errorHtml:loadingHtml))
-      :(cachedReviewText?`<div class="rating-arabic">${cachedReviewText}</div>`:(reviewFailed?errorHtml:loadingHtml));
+      :(reviewPageTextHtml(item)||(reviewFailed?errorHtml:loadingHtml));
     app.innerHTML=`<div class="rating-screen"><div class="top-bar"><button class="back-btn" onclick="exitRating()" title="Exit revision" aria-label="Exit revision"><svg width="9" height="16" viewBox="0 0 9 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1L1 8L8 15"/></svg></button><p class="progress-text" style="margin:0">${prog} / ${total}</p><div class="revision-mode-toggle" role="group" aria-label="Revision mode"><button class="mode-btn${testing?'':' active'}" onclick="setRevisionMode('salah')" aria-pressed="${testing?'false':'true'}">List</button><button class="mode-btn${testing?' active':''}" onclick="setRevisionMode('test')" aria-pressed="${testing?'true':'false'}">Test</button></div></div>
       <div class="rating-main">
         <div class="rating-surah-name">${SURAH_NAMES[surah]}</div>
