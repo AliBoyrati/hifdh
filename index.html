@@ -190,15 +190,6 @@
       text-align: justify; text-align-last: center; unicode-bidi: plaintext; overflow-y: auto; overscroll-behavior: contain;
       max-height: calc(100dvh - 300px); padding: 0 2px 8px;
     }
-    .quran-page-images {
-      display: flex; flex-direction: column; gap: 14px; overflow-y: auto; overscroll-behavior: contain;
-      max-height: calc(100dvh - 300px); padding: 2px 0 8px; margin-bottom: 14px;
-    }
-    .quran-page-image {
-      width: 100%; height: auto; display: block; border-radius: 14px; background: #fff;
-      box-shadow: 0 1px 0 var(--line), 0 10px 26px rgba(0,0,0,0.08);
-    }
-    body.dark .quran-page-image { box-shadow: 0 1px 0 var(--line), 0 10px 26px rgba(0,0,0,0.28); }
     .ayah-mark {
       display: inline-flex; align-items: center; justify-content: center;
       min-width: 1.9em; margin: 0 0.12em; color: var(--ink);
@@ -1273,16 +1264,6 @@ function firstWordsHtml(html,count=8){
   return words.length?`${escapeHtml(words.join(' '))} …`:'';
 }
 function currentReviewPages(item){return item.cardType==='surah'?getSurahPages(item.surah):[item.page];}
-function quranPageImageUrl(page){return `https://quran.islam-db.com/data/pages/quranpages_1024/images/page${String(page).padStart(3,'0')}.png`;}
-function reviewPageImagesHtml(item){
-  return `<div class="quran-page-images" aria-label="Quran page image${currentReviewPages(item).length>1?'s':''}">${currentReviewPages(item).map(p=>`<img class="quran-page-image" src="${quranPageImageUrl(p)}" alt="Quran mushaf page ${p}" loading="eager" decoding="async" onerror="quranPageImageError(this,${p})">`).join('')}</div>`;
-}
-function quranPageImageError(img,page){
-  const msg=document.createElement('p');
-  msg.className='page-text-loading';
-  msg.textContent=`Could not load Quran page ${page} image. Check your connection and try again.`;
-  img.replaceWith(msg);
-}
 function getCachedReviewText(item){
   const pages=currentReviewPages(item), texts=pages.map(p=>{
     const text=normalizePageText(S.pageTextCache[p]);
@@ -1766,15 +1747,15 @@ function render(){
     const names=ratingNames(S.settings);
     const pageNote=formatPageRuns(pagesForRatingSurah(surah));
     const testing=S.revisionMode==='test';
-    if(!testing)ensureReviewText(item);
+    ensureReviewText(item);
     const reviewPages=currentReviewPages(item);
     const cachedReviewText=getCachedReviewText(item);
     const reviewFailed=reviewPages.some(p=>S.pageTextErrors.has(p));
-    const loadingHtml='<p class="page-text-loading">Loading first-word prompt…</p>';
-    const errorHtml='<div class="revision-prompt"><p class="page-text-loading">Could not load the first-word prompt. Check your connection and try again.</p><button class="show-words-btn" onclick="retryCurrentReviewText()">Retry</button></div>';
+    const loadingHtml='<p class="page-text-loading">Loading full page text…</p>';
+    const errorHtml='<div class="revision-prompt"><p class="page-text-loading">Could not load the full page text. Check your connection and try again.</p><button class="show-words-btn" onclick="retryCurrentReviewText()">Retry</button></div>';
     const promptHtml=!testing
       ?(cachedReviewText?`<div class="revision-prompt list-preview"><div class="hidden-words"><div class="hidden-words-pattern" aria-label="First words of the page">${firstWordsHtml(cachedReviewText)}</div></div><p class="revision-hint">List mode shows only the first few words as a prompt.</p></div>`:(reviewFailed?errorHtml:loadingHtml))
-      :reviewPageImagesHtml(item);
+      :(cachedReviewText?`<div class="rating-arabic">${cachedReviewText}</div>`:(reviewFailed?errorHtml:loadingHtml));
     app.innerHTML=`<div class="rating-screen"><div class="top-bar"><button class="back-btn" onclick="exitRating()" title="Exit revision" aria-label="Exit revision"><svg width="9" height="16" viewBox="0 0 9 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1L1 8L8 15"/></svg></button><p class="progress-text" style="margin:0">${prog} / ${total}</p><div class="revision-mode-toggle" role="group" aria-label="Revision mode"><button class="mode-btn${testing?'':' active'}" onclick="setRevisionMode('salah')" aria-pressed="${testing?'false':'true'}">List</button><button class="mode-btn${testing?' active':''}" onclick="setRevisionMode('test')" aria-pressed="${testing?'true':'false'}">Test</button></div></div>
       <div class="rating-main">
         <div class="rating-surah-name">${SURAH_NAMES[surah]}</div>
