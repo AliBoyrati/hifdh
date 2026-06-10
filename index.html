@@ -178,7 +178,7 @@
       font-family: 'Geeza Pro', 'Traditional Arabic', 'Arabic Typesetting', serif;
       font-size: 26px; color: var(--ink); direction: rtl; line-height: 1.9; margin-bottom: 14px;
     }
-    .revision-mode-toggle { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
+    .revision-mode-toggle { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 18px; }
     .mode-btn {
       border: 1.5px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink-2);
       min-height: 40px; padding: 9px 12px; font-size: 14px; font-weight: 600; cursor: pointer;
@@ -1179,7 +1179,7 @@ const S={
   screen:'home', pages:loadPages(), cards:{}, settings:loadSettings(), retired:loadRetired(),
   surahCards:{}, retiredSurahs:loadSurahRetired(), removedSurahs:loadRemovedSurahs(),
   ratingQueue:[], ratingIdx:0, ratingDate:null, pageRatings:{}, surahRatings:{}, ratingHistory:[], pendingRating:null, moreScrollY:0, openJuzs:new Set(),
-  revisionMode:loadRevisionMode(), wordsRevealed:false,
+  revisionMode:loadRevisionMode(), wordsRevealed:false, pageTextCache:loadPageTextCache(), loadingPageTexts:new Set(),
   selectMode:false, selectedForRating:new Set(),
   selectedSurah:null, selection:new Set(),
 };
@@ -1233,12 +1233,18 @@ function getCachedReviewText(item){
 function fetchPageText(p){
   if(S.pageTextCache[p]||S.loadingPageTexts.has(p))return;
   S.loadingPageTexts.add(p);
-  const quranCom=`https://api.quran.com/api/v4/verses/by_page/${p}?fields=text_uthmani&per_page=50`;
   const alQuranCloud=`https://api.alquran.cloud/v1/page/${p}/quran-uthmani`;
-  fetch(quranCom)
+  const quranCom=`https://api.quran.com/api/v4/verses/by_page/${p}?fields=text_uthmani&per_page=50`;
+  const pageFromAlQuranCloud=()=>fetch(alQuranCloud)
     .then(r=>r.ok?r.json():Promise.reject())
-    .then(data=>(data.verses||[]).map(v=>v.text_uthmani).filter(Boolean).join(' '))
-    .catch(()=>fetch(alQuranCloud).then(r=>r.ok?r.json():Promise.reject()).then(data=>(data.data?.ayahs||[]).map(a=>a.text).filter(Boolean).join(' ')))
+    .then(data=>(data.data?.ayahs||[]).map(a=>a.text).filter(Boolean).join(' '));
+  const pageFromQuranCom=()=>fetch(quranCom)
+    .then(r=>r.ok?r.json():Promise.reject())
+    .then(data=>(data.verses||[]).map(v=>v.text_uthmani).filter(Boolean).join(' '));
+
+  // Test mode should reveal the complete Mushaf page, not just the page-start prompt.
+  pageFromAlQuranCloud()
+    .catch(pageFromQuranCom)
     .then(text=>{const clean=normalizePageText(text);if(clean){S.pageTextCache[p]=clean;savePageTextCache(S.pageTextCache);}})
     .catch(()=>{})
     .finally(()=>{S.loadingPageTexts.delete(p);if(S.screen==='rating')render();});
@@ -1696,7 +1702,7 @@ function render(){
     if(testing)ensureReviewText(item);
     const reviewText=testing?getCachedReviewText(item):verse;
     const promptHtml=testing&&!S.wordsRevealed
-      ?`<div class="revision-prompt"><div class="hidden-words"><div class="hidden-words-pattern" aria-label="Whole page hidden">${reviewText?hiddenWordsPattern(reviewText):hiddenPagePattern()}</div><button class="show-words-btn" onclick="revealCurrentPrompt()"${reviewText?'':' disabled'}>${reviewText?'Show page':'Loading page…'}</button></div><p class="revision-hint">Recite the whole page from memory, then reveal it to check yourself.</p></div>`
+      ?`<div class="revision-prompt"><div class="hidden-words"><div class="hidden-words-pattern" aria-label="Whole page hidden">${reviewText?hiddenWordsPattern(reviewText):hiddenPagePattern()}</div><button class="show-words-btn" onclick="revealCurrentPrompt()"${reviewText?'':' disabled'}>${reviewText?'Show whole page':'Loading whole page…'}</button></div><p class="revision-hint">Recite the whole page from memory, then reveal it to check yourself.</p></div>`
       :(reviewText?`<div class="rating-arabic">${escapeHtml(reviewText).replace(/\n/g,'<br>')}</div>`:'<p class="page-text-loading">Loading page text…</p>');
     app.innerHTML=`<div class="top-bar"><button class="back-btn" onclick="exitRating()" title="Exit revision" aria-label="Exit revision"><svg width="9" height="16" viewBox="0 0 9 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1L1 8L8 15"/></svg></button><p class="progress-text" style="margin:0">${prog} / ${total}</p><span style="width:42px" aria-hidden="true"></span></div>
       <div class="rating-main">
