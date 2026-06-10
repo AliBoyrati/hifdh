@@ -49,6 +49,8 @@
 
     /* ── Top bar ─────────────────────────────────────────────────── */
     .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+    .top-bar.rating-top { display: grid; grid-template-columns: 1fr auto 1fr; column-gap: 12px; }
+    .top-bar.rating-top .progress-text { grid-column: 2; justify-self: center; }
     .top-bar-right { display: flex; gap: 18px; }
     h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.3px; color: var(--ink); }
     .top-btn {
@@ -206,7 +208,7 @@
     }
     .mushaf-page.structured { text-align: initial; text-align-last: auto; }
     .mushaf-line {
-      display: flex; align-items: baseline; justify-content: space-between; gap: 0.28em;
+      display: flex; align-items: center; justify-content: space-between; gap: 0.28em;
       min-height: calc(var(--mushaf-font-size, 28px) * var(--mushaf-line-height, 2.05)); direction: rtl; white-space: nowrap;
       overflow: hidden;
     }
@@ -215,6 +217,7 @@
       display: inline-flex; align-items: center; justify-content: center; border-radius: 0.24em;
       transition: color 0.16s ease, background 0.16s ease, opacity 0.16s ease;
     }
+    .mushaf-ayah-end { flex: 0 0 auto; }
     .mushaf-page.hidden .mushaf-word {
       color: transparent; background: var(--line);
       text-shadow: none; min-width: 1.15em; user-select: none;
@@ -223,14 +226,20 @@
     .mushaf-reveal-row { display: flex; justify-content: center; margin: 8px 0 2px; }
     body.dark .mushaf-page { box-shadow: 0 1px 0 var(--line), 0 10px 26px rgba(0,0,0,0.28); }
     .mushaf-page .ayah-mark { color: var(--mushaf-ayah-color, var(--ink-2)); }
+    .ayah-symbol { font-size: 1.95em; line-height: 1; }
+    .ayah-number {
+      position: absolute; left: 50%; top: 50%; transform: translate(-50%, -52%);
+      font-family: 'Times New Roman', 'Geeza Pro', 'Traditional Arabic', serif;
+      font-size: 0.56em; font-weight: 700; line-height: 1; color: var(--mushaf-ayah-color, var(--ink-2));
+    }
     .basmala-line {
       display: block; text-align: center; text-align-last: center; margin: 0 0 0.35em;
     }
     .ayah-mark {
       display: inline-flex; align-items: center; justify-content: center;
-      min-width: 1.9em; margin: 0 0.12em; color: var(--ink);
-      font-size: 0.72em; font-family: 'KFGQPC Uthmanic Script HAFS', 'Amiri Quran', 'Scheherazade New', 'Traditional Arabic', serif;
-      white-space: nowrap; vertical-align: middle;
+      position: relative; width: 1.65em; min-width: 1.65em; height: 1.65em; margin: 0 0.12em; color: var(--mushaf-ayah-color, var(--ink-2));
+      font-size: 0.72em; font-family: 'Amiri Quran', 'Scheherazade New', 'Geeza Pro', 'Traditional Arabic', serif;
+      white-space: nowrap; vertical-align: middle; line-height: 1;
     }
     .revision-prompt { margin-bottom: 10px; flex: 1 1 auto; display: flex; flex-direction: column; }
     .rating-screen .rating-nav { flex-shrink: 0; margin-top: auto; }
@@ -1058,7 +1067,7 @@ function buildRatingQueue(duePages) {
   const addSurahPages=s=>{
     if(seenSurahs.has(s)||S.retiredSurahs.has(s)||!S.surahCards[s])return;
     seenSurahs.add(s);
-    getSurahPages(s).forEach(p=>queue.push({page:p,surah:s,cardType:'surah'}));
+    queue.push({page:SURAH_STARTS[s],surah:s,cardType:'surah'});
   };
   for (const p of duePages) {
     const starts = PAGE_SURAH_STARTS[p] || [];
@@ -1268,9 +1277,9 @@ function resetMushafAppearance(){['mushafFontSize','mushafLineHeight','mushafTex
 function toggleDarkMode(){S.settings.darkMode=!S.settings.darkMode;saveSettings(S.settings);applyTheme();render();}
 function normalizePageText(text){return String(text||'').replace(/\s+/g,' ').trim();}
 function toArabicIndicNumber(value){return String(value).replace(/\d/g,d=>'٠١٢٣٤٥٦٧٨٩'[d]);}
-function ayahMark(number){return `<span class="ayah-mark" aria-label="Ayah ${number}">﴿${toArabicIndicNumber(number)}﴾</span>`;}
+function ayahMark(number){const n=toArabicIndicNumber(number);return `<span class="ayah-mark" aria-label="Ayah ${number}"><span class="ayah-symbol" aria-hidden="true">۝</span><span class="ayah-number">${n}</span></span>`;}
 function stripHtml(value){const el=document.createElement('div');el.innerHTML=String(value||'');return normalizePageText(el.textContent||'');}
-function pageTextHasAyahMarks(value){return /class=["']ayah-mark["']|﴿[٠-٩0-9]+﴾/.test(String(value||''));}
+function pageTextHasAyahMarks(value){return /class=["']ayah-mark["']|class=["']ayah-symbol["']|۝|﴿[٠-٩0-9]+﴾/.test(String(value||''));}
 const BASMALA_RE=/^((?:بِسْمِ|بسم)\s+(?:[ٱا]?للَّهِ|الله)\s+(?:[ٱا]?لرَّحْمَـ?ٰنِ|الرحمن)\s+(?:[ٱا]?لرَّحِيمِ|الرحيم))(?:\s+|$)/u;
 function formatQuranComAyahText(value){
   const text=normalizePageText(value);
@@ -1286,7 +1295,11 @@ function formatPageAyahs(ayahs){
     return normalizePageText(text)&&number?`${formatQuranComAyahText(text)} ${ayahMark(number)}`:'';
   }).filter(Boolean).join(' ');
 }
-function currentReviewPages(item){return [item.page];}
+function currentReviewPages(item){
+  if(!item)return [];
+  if(item.cardType==='surah'&&item.surah)return getSurahPages(item.surah).filter(p=>S.pages.includes(p));
+  return [item.page];
+}
 function getCachedPageText(page){
   const text=normalizePageText(S.pageTextCache[page]);
   return pageTextHasAyahMarks(text)?text:escapeHtml(text);
@@ -1841,8 +1854,10 @@ function render(){
     const errorHtml='<div class="revision-prompt"><p class="page-text-loading">Could not load the Quran page. Check your connection and try again.</p><button class="show-words-btn" onclick="retryCurrentReviewText()">Retry</button></div>';
     const promptHtml=reviewPageTextHtml(item)||(reviewFailed?errorHtml:loadingHtml);
     const pagesLeft=Math.max(0,total-prog);
-    const pageStatus=`Page ${page} · ${pagesLeft} page${pagesLeft===1?'':'s'} left in this revision`;
-    app.innerHTML=`<div class="rating-screen"><div class="top-bar"><button class="back-btn" onclick="exitRating()" title="Exit revision" aria-label="Exit revision"><svg width="9" height="16" viewBox="0 0 9 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1L1 8L8 15"/></svg></button><p class="progress-text" style="margin:0">${prog} / ${total}</p><span aria-hidden="true"></span></div>
+    const pageNumbers=reviewPages.length>1?`${reviewPages[0]}-${reviewPages[reviewPages.length-1]}`:`${page}`;
+    const pageNoun=reviewPages.length===1?'page':'pages';
+    const pageStatus=`${pageNoun[0].toUpperCase()+pageNoun.slice(1)} ${pageNumbers} · ${pagesLeft} revision item${pagesLeft===1?'':'s'} left`;
+    app.innerHTML=`<div class="rating-screen"><div class="top-bar rating-top"><button class="back-btn" onclick="exitRating()" title="Exit revision" aria-label="Exit revision"><svg width="9" height="16" viewBox="0 0 9 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1L1 8L8 15"/></svg></button><p class="progress-text" style="margin:0">${prog} / ${total}</p><span aria-hidden="true"></span></div>
       <div class="rating-main">
         <div class="rating-surah-name">${SURAH_NAMES[surah]}</div>
         ${promptHtml}
