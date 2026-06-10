@@ -204,6 +204,23 @@
       background: var(--mushaf-page-color, var(--surface)); border: 1px solid var(--line); border-radius: 18px;
       padding: 18px 16px 20px; box-shadow: 0 1px 0 var(--line), 0 10px 26px rgba(0,0,0,0.08);
     }
+    .mushaf-page.structured { text-align: initial; text-align-last: auto; }
+    .mushaf-line {
+      display: flex; align-items: baseline; justify-content: space-between; gap: 0.28em;
+      min-height: calc(var(--mushaf-font-size, 28px) * var(--mushaf-line-height, 2.05)); direction: rtl; white-space: nowrap;
+      overflow: hidden;
+    }
+    .mushaf-line.short { justify-content: center; gap: 0.38em; }
+    .mushaf-word, .mushaf-ayah-end {
+      display: inline-flex; align-items: center; justify-content: center; border-radius: 0.24em;
+      transition: color 0.16s ease, background 0.16s ease, opacity 0.16s ease;
+    }
+    .mushaf-page.hidden .mushaf-word {
+      color: transparent; background: var(--line);
+      text-shadow: none; min-width: 1.15em; user-select: none;
+    }
+    .mushaf-page.hidden .mushaf-ayah-end { opacity: 0.42; }
+    .mushaf-reveal-row { display: flex; justify-content: center; margin: 8px 0 2px; }
     body.dark .mushaf-page { box-shadow: 0 1px 0 var(--line), 0 10px 26px rgba(0,0,0,0.28); }
     .mushaf-page .ayah-mark { color: var(--mushaf-ayah-color, var(--ink-2)); }
     .basmala-line {
@@ -1061,6 +1078,7 @@ function buildRatingQueue(duePages) {
 const KEY_CARDS='hifdh_v1', KEY_PAGES='hifdh_pages', KEY_SETTINGS='hifdh_settings', KEY_RETIRED='hifdh_retired';
 const KEY_SURAH_CARDS='hifdh_surah_v1', KEY_SURAH_RETIRED='hifdh_surah_retired', KEY_SURAH_REMOVED='hifdh_surah_removed';
 const KEY_PAGE_TEXT='hifdh_page_text_cache_quran_com_v1';
+const KEY_PAGE_META='hifdh_page_meta_cache_quran_com_v1';
 const DEFAULT_PAGES=[];
 const DEFAULT_SETTINGS={
   forgotDays:1,struggledDays:3,easyDays:10,forgotLabel:'Forgot',struggledLabel:'Struggled',easyLabel:'Easy',darkMode:true,
@@ -1076,6 +1094,8 @@ const loadSettings=()=>{
 const saveSettings=s=>localStorage.setItem(KEY_SETTINGS,JSON.stringify(s));
 const loadPageTextCache=()=>{try{return JSON.parse(localStorage.getItem(KEY_PAGE_TEXT)||'{}')||{};}catch{return{};}};
 const savePageTextCache=cache=>localStorage.setItem(KEY_PAGE_TEXT,JSON.stringify(cache));
+const loadPageMetaCache=()=>{try{return JSON.parse(localStorage.getItem(KEY_PAGE_META)||'{}')||{};}catch{return{};}};
+const savePageMetaCache=cache=>localStorage.setItem(KEY_PAGE_META,JSON.stringify(cache));
 const loadPages=()=>{const r=localStorage.getItem(KEY_PAGES);if(r)return JSON.parse(r);const p=[...DEFAULT_PAGES];localStorage.setItem(KEY_PAGES,JSON.stringify(p));return p;};
 const savePages=p=>localStorage.setItem(KEY_PAGES,JSON.stringify([...p].sort((a,b)=>a-b)));
 const loadCards=()=>{const r=localStorage.getItem(KEY_CARDS);return r?JSON.parse(r):{};};
@@ -1200,7 +1220,8 @@ const S={
   screen:'home', pages:loadPages(), cards:{}, settings:loadSettings(), retired:loadRetired(),
   surahCards:{}, retiredSurahs:loadSurahRetired(), removedSurahs:loadRemovedSurahs(),
   ratingQueue:[], ratingIdx:0, ratingDate:null, pageRatings:{}, surahRatings:{}, ratingHistory:[], pendingRating:null, moreScrollY:0, openJuzs:new Set(),
-  pageTextCache:loadPageTextCache(), loadingPageTexts:new Set(), pageTextErrors:new Set(),
+  pageTextCache:loadPageTextCache(), pageMetaCache:loadPageMetaCache(), loadingPageTexts:new Set(), pageTextErrors:new Set(),
+  revealedReviewPages:new Set(),
   selectMode:false, selectedForRating:new Set(),
   selectedSurah:null, selection:new Set(),
 };
@@ -1270,36 +1291,88 @@ function getCachedPageText(page){
   const text=normalizePageText(S.pageTextCache[page]);
   return pageTextHasAyahMarks(text)?text:escapeHtml(text);
 }
+function getCachedPageMeta(page){
+  const meta=S.pageMetaCache[page];
+  return meta&&Array.isArray(meta.lines)&&meta.lines.length?meta:null;
+}
 function mushafStyle(){
   const s=S.settings;
   return `--mushaf-font-size:${s.mushafFontSize||DEFAULT_SETTINGS.mushafFontSize}px;--mushaf-line-height:${s.mushafLineHeight||DEFAULT_SETTINGS.mushafLineHeight};--mushaf-text-color:${s.mushafTextColor||DEFAULT_SETTINGS.mushafTextColor};--mushaf-page-color:${s.mushafPageColor||DEFAULT_SETTINGS.mushafPageColor};--mushaf-ayah-color:${s.mushafAyahColor||DEFAULT_SETTINGS.mushafAyahColor}`;
 }
+function wordText(word){return normalizePageText(word.code_v2||word.text_qpc_hafs||word.text_uthmani||word.text||word.char_type_name||'');}
+function isEndWord(word){return /end/i.test(String(word.char_type_name||''));}
+function wordLineNumber(word, fallback=1){return parseInt(word.line_number||word.line||fallback)||fallback;}
+function verseKeyParts(key){const [s,a]=String(key||'').split(':').map(n=>parseInt(n));return{surah:s||0,ayah:a||0};}
+function normalizeQuranComPage(data,page){
+  const lines=[];
+  const addWord=(line,word)=>{if(!lines[line-1])lines[line-1]=[];lines[line-1].push(word);};
+  (data.verses||[]).forEach(verse=>{
+    const parts=verseKeyParts(verse.verse_key);
+    const words=Array.isArray(verse.words)?verse.words.filter(w=>w&&wTextOk(w)):[];
+    if(words.length){
+      let lastLine=1;
+      words.forEach(w=>{
+        const line=wordLineNumber(w,lastLine);
+        lastLine=line;
+        const text=wordText(w);
+        if(!text)return;
+        addWord(line,{text, surah:parts.surah, ayah:parts.ayah, word:w.position||w.id||0, end:isEndWord(w)});
+      });
+      if(!words.some(isEndWord))addWord(lastLine,{text:parts.ayah, surah:parts.surah, ayah:parts.ayah, end:true});
+    } else {
+      const text=normalizePageText(verse.text_uthmani||verse.text_qpc_hafs||verse.text||'');
+      if(text)addWord(lines.length+1,{text, surah:parts.surah, ayah:parts.ayah, fallback:true});
+      if(parts.ayah)addWord(lines.length||1,{text:parts.ayah, surah:parts.surah, ayah:parts.ayah, end:true});
+    }
+  });
+  const cleanLines=lines.filter(Boolean).map(words=>({words}));
+  return cleanLines.length?{page,source:'quran.com',lines:cleanLines}:null;
+}
+function wTextOk(w){return !!wordText(w)&&!['pause','rub-el-hizb'].includes(String(w.char_type_name||'').toLowerCase());}
+function renderMushafMetaPage(page,meta){
+  const hidden=!S.revealedReviewPages.has(page);
+  const lineHtml=meta.lines.map(line=>{
+    const words=(line.words||[]).map(w=>w.end?`<span class="mushaf-ayah-end">${ayahMark(w.text)}</span>`:`<span class="mushaf-word" data-ayah="${w.surah||''}:${w.ayah||''}">${escapeHtml(w.text)}</span>`).join('');
+    const short=(line.words||[]).length<5?' short':'';
+    return `<div class="mushaf-line${short}">${words}</div>`;
+  }).join('');
+  return `<div class="mushaf-page structured${hidden?' hidden':''}" style="${mushafStyle()}" aria-label="Quran page ${page}">${lineHtml}</div>${hidden?`<div class="mushaf-reveal-row"><button class="show-words-btn" onclick="revealReviewPage(${page})">Reveal page</button></div>`:''}`;
+}
 function reviewPageTextHtml(item){
-  const pages=currentReviewPages(item), texts=pages.map(p=>({page:p,text:getCachedPageText(p)}));
+  const pages=currentReviewPages(item);
+  const metas=pages.map(p=>({page:p,meta:getCachedPageMeta(p)}));
+  if(metas.every(t=>t.meta))return `<div class="mushaf-pages${pages.length>1?' multi-page':''}" aria-label="Quran page text">${metas.map(t=>renderMushafMetaPage(t.page,t.meta)).join('')}</div>`;
+  const texts=pages.map(p=>({page:p,text:getCachedPageText(p)}));
   if(!texts.every(t=>t.text))return '';
   return `<div class="mushaf-pages${pages.length>1?' multi-page':''}" aria-label="Quran page text">${texts.map(t=>`<div class="mushaf-page" style="${mushafStyle()}" aria-label="Quran page ${t.page}">${t.text}</div>`).join('')}</div>`;
 }
 function fetchPageText(p){
-  if((S.pageTextCache[p]&&pageTextHasAyahMarks(S.pageTextCache[p]))||S.loadingPageTexts.has(p)||S.pageTextErrors.has(p))return;
+  if((getCachedPageMeta(p)||S.pageTextCache[p])||S.loadingPageTexts.has(p)||S.pageTextErrors.has(p))return;
   S.pageTextErrors.delete(p);
   S.loadingPageTexts.add(p);
   const alQuranCloud=`https://api.alquran.cloud/v1/page/${p}/quran-uthmani`;
-  const quranCom=`https://api.quran.com/api/v4/verses/by_page/${p}?fields=text_uthmani&per_page=50`;
+  const quranCom=`https://api.quran.com/api/v4/verses/by_page/${p}?mushaf=1&words=true&word_fields=code_v2,text_qpc_hafs,text_uthmani,page_number,line_number&fields=text_uthmani&per_page=50`;
   const pageFromAlQuranCloud=()=>fetch(alQuranCloud)
     .then(r=>r.ok?r.json():Promise.reject())
-    .then(data=>formatPageAyahs(data.data?.ayahs||[]));
+    .then(data=>({text:formatPageAyahs(data.data?.ayahs||[])}));
   const pageFromQuranCom=()=>fetch(quranCom)
     .then(r=>r.ok?r.json():Promise.reject())
-    .then(data=>formatPageAyahs(data.verses||[]));
+    .then(data=>({meta:normalizeQuranComPage(data,p),text:formatPageAyahs(data.verses||[])}));
 
-  // Prefer Quran.com text so the rendered page matches Quran.com's Uthmani script output.
   pageFromQuranCom()
     .catch(pageFromAlQuranCloud)
-    .then(text=>{const clean=normalizePageText(text);if(clean){S.pageTextCache[p]=clean;savePageTextCache(S.pageTextCache);}else{S.pageTextErrors.add(p);}})
+    .then(result=>{
+      const meta=result.meta;
+      const clean=normalizePageText(result.text);
+      if(meta){S.pageMetaCache[p]=meta;savePageMetaCache(S.pageMetaCache);}
+      if(clean){S.pageTextCache[p]=clean;savePageTextCache(S.pageTextCache);}
+      if(!meta&&!clean)S.pageTextErrors.add(p);
+    })
     .catch(()=>{S.pageTextErrors.add(p);})
     .finally(()=>{S.loadingPageTexts.delete(p);if(S.screen==='rating')render();});
 }
 function ensureReviewText(item){currentReviewPages(item).forEach(fetchPageText);}
+function revealReviewPage(page){S.revealedReviewPages.add(page);render();}
 function retryCurrentReviewText(){
   const item=S.ratingQueue[S.ratingIdx];
   if(!item)return;
@@ -1314,7 +1387,7 @@ function toggleSelectPage(p){S.selectedForRating.has(p)?S.selectedForRating.dele
 function startRating(pagesToRate=null){
   const due=pagesToRate||getDue(S.cards,S.pages);
   S.ratingQueue=buildRatingQueue(due);
-  S.ratingIdx=0;S.ratingDate=today();S.pageRatings={};S.surahRatings={};S.ratingHistory=[];S.pendingRating=null;
+  S.ratingIdx=0;S.ratingDate=today();S.pageRatings={};S.surahRatings={};S.ratingHistory=[];S.pendingRating=null;S.revealedReviewPages=new Set();
   S.selectMode=false;S.selectedForRating=new Set();
   S.screen='rating';render();
 }
@@ -1326,11 +1399,11 @@ function previousRating(){
   if(S.ratingIdx>0){undoLastRating();render();}
 }
 function exitRating(){
-  S.screen='home'; S.ratingQueue=[]; S.ratingIdx=0; S.ratingDate=null; S.pageRatings={}; S.surahRatings={}; S.ratingHistory=[]; S.pendingRating=null; render();
+  S.screen='home'; S.ratingQueue=[]; S.ratingIdx=0; S.ratingDate=null; S.pageRatings={}; S.surahRatings={}; S.ratingHistory=[]; S.pendingRating=null; S.revealedReviewPages=new Set(); render();
 }
 function startRatingSingle(p){
   S.ratingQueue=buildRatingQueue([p]);
-  S.ratingIdx=0;S.ratingDate=today();S.pageRatings={};S.surahRatings={};S.ratingHistory=[];S.pendingRating=null;
+  S.ratingIdx=0;S.ratingDate=today();S.pageRatings={};S.surahRatings={};S.ratingHistory=[];S.pendingRating=null;S.revealedReviewPages=new Set();
   S.selectMode=false;
   S.screen='rating';render();
 }
@@ -1359,7 +1432,7 @@ function rate(r){
     saveCards(S.cards);
   }
   S.ratingIdx++;
-  S.pendingRating=null;
+  S.pendingRating=null;S.revealedReviewPages=new Set();
   if(S.ratingIdx>=S.ratingQueue.length){
     S.screen='home';
     S.ratingQueue=[];
@@ -1469,9 +1542,9 @@ function showModal(title, msg, confirmLabel, _danger, onConfirm){
 
 function hardReset(){
   showModal('Reset all progress?','This cannot be undone.','Reset',true,()=>{
-    [KEY_CARDS,KEY_PAGES,KEY_SETTINGS,KEY_RETIRED,KEY_SURAH_CARDS,KEY_SURAH_RETIRED,KEY_SURAH_REMOVED,KEY_PAGE_TEXT].forEach(k=>localStorage.removeItem(k));
+    [KEY_CARDS,KEY_PAGES,KEY_SETTINGS,KEY_RETIRED,KEY_SURAH_CARDS,KEY_SURAH_RETIRED,KEY_SURAH_REMOVED,KEY_PAGE_TEXT,KEY_PAGE_META].forEach(k=>localStorage.removeItem(k));
     S.pages=[...DEFAULT_PAGES];S.settings={...DEFAULT_SETTINGS};S.retired=new Set();S.retiredSurahs=new Set();S.removedSurahs=new Set();
-    S.cards=ensureCards({},S.pages);S.surahCards={};S.pageTextCache={};S.loadingPageTexts=new Set();S.pageTextErrors=new Set();saveSurahCards(S.surahCards);S.screen='home';render();
+    S.cards=ensureCards({},S.pages);S.surahCards={};S.pageTextCache={};S.pageMetaCache={};S.loadingPageTexts=new Set();S.pageTextErrors=new Set();S.revealedReviewPages=new Set();saveSurahCards(S.surahCards);S.screen='home';render();
   });
 }
 

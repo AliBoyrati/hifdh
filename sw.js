@@ -1,4 +1,4 @@
-const CACHE_NAME = 'quranki-v7';
+const CACHE_NAME = 'quranki-v8';
 const APP_SHELL = [
   './',
   './index.html',
