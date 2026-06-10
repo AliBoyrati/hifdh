@@ -178,13 +178,16 @@
       font-family: 'Geeza Pro', 'Traditional Arabic', 'Arabic Typesetting', serif;
       font-size: 26px; color: var(--ink); direction: rtl; line-height: 1.9; margin-bottom: 14px;
     }
-    .revision-mode-toggle { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 18px; }
+    .revision-mode-toggle {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 3px; padding: 3px;
+      border-radius: 999px; background: var(--surface); min-width: 112px;
+    }
     .mode-btn {
-      border: 1.5px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink-2);
-      min-height: 40px; padding: 9px 12px; font-size: 14px; font-weight: 600; cursor: pointer;
+      border: none; border-radius: 999px; background: transparent; color: var(--ink-2);
+      min-height: 32px; padding: 7px 10px; font-size: 13px; font-weight: 700; cursor: pointer;
       touch-action: manipulation; -webkit-user-select: none; user-select: none;
     }
-    .mode-btn.active { background: var(--btn); border-color: var(--btn); color: var(--btn-txt); }
+    .mode-btn.active { background: var(--btn); color: var(--btn-txt); }
     .mode-btn:active { opacity: 0.78; }
     .revision-prompt { margin-bottom: 14px; }
     .hidden-words {
@@ -1242,7 +1245,7 @@ function fetchPageText(p){
     .then(r=>r.ok?r.json():Promise.reject())
     .then(data=>(data.verses||[]).map(v=>v.text_uthmani).filter(Boolean).join(' '));
 
-  // Test mode should reveal the complete Mushaf page, not just the page-start prompt.
+  // Revision views should use the complete Mushaf page, not just the page-start prompt.
   pageFromAlQuranCloud()
     .catch(pageFromQuranCom)
     .then(text=>{const clean=normalizePageText(text);if(clean){S.pageTextCache[p]=clean;savePageTextCache(S.pageTextCache);}})
@@ -1699,12 +1702,13 @@ function render(){
     const pageNote=formatPageRuns(pagesForRatingSurah(surah));
     const verse=getPageVerse(page,surah)||'';
     const testing=S.revisionMode==='test';
-    if(testing)ensureReviewText(item);
-    const reviewText=testing?getCachedReviewText(item):verse;
+    ensureReviewText(item);
+    const cachedReviewText=getCachedReviewText(item);
+    const reviewText=cachedReviewText||verse;
     const promptHtml=testing&&!S.wordsRevealed
-      ?`<div class="revision-prompt"><div class="hidden-words"><div class="hidden-words-pattern" aria-label="Whole page hidden">${reviewText?hiddenWordsPattern(reviewText):hiddenPagePattern()}</div><button class="show-words-btn" onclick="revealCurrentPrompt()"${reviewText?'':' disabled'}>${reviewText?'Show whole page':'Loading whole page…'}</button></div><p class="revision-hint">Recite the whole page from memory, then reveal it to check yourself.</p></div>`
+      ?`<div class="revision-prompt"><div class="hidden-words"><div class="hidden-words-pattern" aria-label="Whole page hidden">${cachedReviewText?hiddenWordsPattern(cachedReviewText):hiddenPagePattern()}</div><button class="show-words-btn" onclick="revealCurrentPrompt()"${cachedReviewText?'':' disabled'}>${cachedReviewText?'Show whole page':'Loading whole page…'}</button></div><p class="revision-hint">Recite the whole page from memory, then reveal it to check yourself.</p></div>`
       :(reviewText?`<div class="rating-arabic">${escapeHtml(reviewText).replace(/\n/g,'<br>')}</div>`:'<p class="page-text-loading">Loading page text…</p>');
-    app.innerHTML=`<div class="top-bar"><button class="back-btn" onclick="exitRating()" title="Exit revision" aria-label="Exit revision"><svg width="9" height="16" viewBox="0 0 9 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1L1 8L8 15"/></svg></button><p class="progress-text" style="margin:0">${prog} / ${total}</p><span style="width:42px" aria-hidden="true"></span></div>
+    app.innerHTML=`<div class="top-bar"><button class="back-btn" onclick="exitRating()" title="Exit revision" aria-label="Exit revision"><svg width="9" height="16" viewBox="0 0 9 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1L1 8L8 15"/></svg></button><p class="progress-text" style="margin:0">${prog} / ${total}</p><div class="revision-mode-toggle" role="group" aria-label="Revision mode"><button class="mode-btn${testing?'':' active'}" onclick="setRevisionMode('salah')" aria-pressed="${testing?'false':'true'}">List</button><button class="mode-btn${testing?' active':''}" onclick="setRevisionMode('test')" aria-pressed="${testing?'true':'false'}">Test</button></div></div>
       <div class="rating-main">
         <div class="rating-surah-name">${SURAH_NAMES[surah]} · ${pageNote}</div>
         ${promptHtml}
@@ -1717,10 +1721,6 @@ function render(){
           <button class="r-btn${S.pendingRating===3?' selected':''}" onclick="selectRating(3)"><span class="r-label">${escapeHtml(names[3])}</span><span class="r-when">${preview[3]}</span></button>
         </div>
         <button class="rating-arrow" onclick="nextRating()" title="Next surah" aria-label="Next surah"${S.pendingRating?'':' disabled'}><svg width="9" height="16" viewBox="0 0 9 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 1L8 8L1 15"/></svg></button>
-      </div>
-      <div class="revision-mode-toggle" role="group" aria-label="Revision mode">
-        <button class="mode-btn${testing?'':' active'}" onclick="setRevisionMode('salah')" aria-pressed="${testing?'false':'true'}">Salah list</button>
-        <button class="mode-btn${testing?' active':''}" onclick="setRevisionMode('test')" aria-pressed="${testing?'true':'false'}">Test myself</button>
       </div>`;
     return;
   }
